@@ -14,6 +14,9 @@ type Candle = {
   low: number;
   close: number;
 };
+type BOS = "BULLISH" | "BEARISH" | "SIDEWAYS";
+type CHOCH = "BULLISH" | "BEARISH" | "NONE";
+type MarketState = "BULLISH" | "BEARISH" | "SIDEWAYS" | "NONE";
 
 function fmt(n: number | undefined, d = 2) {
   if (!n) return "-";
@@ -167,8 +170,8 @@ export default function CryptoPage() {
   const [trend, setTrend] = useState("SIDEWAYS");
   const [fc, setFc] = useState<any>({});
 
-  const [bos, setBos] = useState("SIDEWAYS");
-  const [choch, setChoch] = useState("NONE");
+  const [bos, setBos] = useState<BOS>("SIDEWAYS");
+const [choch, setChoch] = useState<CHOCH>("NONE");
   const [support, setSupport] = useState(0);
   const [resistance, setResistance] = useState(0);
   
@@ -221,8 +224,10 @@ useEffect(() => {
 setSupport(
   Math.min(...c.slice(-50).map((x) => x.low))
 );
-setBos(detectBOS(c));
-setChoch(detectCHOCH(c));
+const bosResult = detectBOS(c);
+
+setBos(bosResult);
+setChoch(detectCHOCH(c, bosResult));
   }
 
   useEffect(() => {
@@ -342,6 +347,7 @@ function formatCountdown(ms: number) {
             ${fmt(ticker.price)}
           </div>
 		  
+
 <div className="mt-3 text-center">
   <div className="text-xs text-zinc-400">
     ⏳ Candle closes in
