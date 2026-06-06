@@ -21,36 +21,26 @@ type ChartCandle = {
   close: number;
 };
 
-export default function Chart({
-  candles,
-}: {
-  candles: Candle[];
-}) {
+/* ================= COMPONENT ================= */
+
+export default function Chart({ candles }: { candles: Candle[] }) {
   const ref = useRef<HTMLDivElement>(null);
 
   /* ================= EMA ================= */
   function EMA(data: ChartCandle[], period: number) {
     const k = 2 / (period + 1);
 
-    let ema: { time: UTCTimestamp; value: number }[] = [];
+    const ema: { time: UTCTimestamp; value: number }[] = [];
 
     let prev =
-      data.slice(0, period).reduce((a, b) => a + b.close, 0) /
-      period;
+      data.slice(0, period).reduce((a, b) => a + b.close, 0) / period;
 
     for (let i = period - 1; i < data.length; i++) {
       if (i === period - 1) {
-        ema.push({
-          time: data[i].time,
-          value: prev,
-        });
+        ema.push({ time: data[i].time, value: prev });
       } else {
         prev = data[i].close * k + prev * (1 - k);
-
-        ema.push({
-          time: data[i].time,
-          value: prev,
-        });
+        ema.push({ time: data[i].time, value: prev });
       }
     }
 
@@ -59,15 +49,14 @@ export default function Chart({
 
   /* ================= BOLLINGER ================= */
   function Bollinger(data: ChartCandle[], period = 20, mult = 2) {
-    let upper: any[] = [];
-    let middle: any[] = [];
-    let lower: any[] = [];
+    const upper: any[] = [];
+    const middle: any[] = [];
+    const lower: any[] = [];
 
     for (let i = period - 1; i < data.length; i++) {
       const slice = data.slice(i - period + 1, i + 1);
 
-      const avg =
-        slice.reduce((a, b) => a + b.close, 0) / period;
+      const avg = slice.reduce((a, b) => a + b.close, 0) / period;
 
       const variance =
         slice.reduce((a, b) => a + Math.pow(b.close - avg, 2), 0) /
@@ -83,7 +72,7 @@ export default function Chart({
     return { upper, middle, lower };
   }
 
-  /* ================= SUPPORT / RESISTANCE ================= */
+  /* ================= SWING LEVELS ================= */
   function SwingLevels(data: ChartCandle[]) {
     let resistance = data[0].high;
     let support = data[0].low;
@@ -139,10 +128,8 @@ export default function Chart({
         low: Number(c.low),
         close: Number(c.close),
       }))
-      .sort((a, b) => a.time - b.time) // SORT ASC
-      .filter((c, i, arr) =>
-        i === 0 ? true : c.time > arr[i - 1].time // REMOVE DUPLICATE TIME
-      );
+      .sort((a, b) => a.time - b.time)
+      .filter((c, i, arr) => i === 0 || c.time > arr[i - 1].time);
 
     const chart = createChart(ref.current, {
       width: ref.current.clientWidth,
@@ -195,12 +182,12 @@ export default function Chart({
 
     resistanceSeries.setData([
       { time: formatted[0].time, value: sr.resistance },
-      { time: formatted[formatted.length - 1].time, value: sr.resistance },
+      { time: formatted.at(-1)!.time, value: sr.resistance },
     ]);
 
     supportSeries.setData([
       { time: formatted[0].time, value: sr.support },
-      { time: formatted[formatted.length - 1].time, value: sr.support },
+      { time: formatted.at(-1)!.time, value: sr.support },
     ]);
 
     chart.timeScale().fitContent();
