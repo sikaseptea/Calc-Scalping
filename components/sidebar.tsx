@@ -29,6 +29,11 @@ const menus = [
     href: "/compound",
     icon: TrendingUp,
   },
+  {
+  label: "Crypto",
+  href: "/crypto",
+  icon: TrendingUp,
+  },
 ];
 
 type SidebarProps = {
