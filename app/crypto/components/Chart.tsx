@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { createChart } from "lightweight-charts";
+import type { UTCTimestamp } from "lightweight-charts";
 
 type Candle = {
-  time: number;
+  time: UTCTimestamp;
   open: number;
   high: number;
   low: number;
@@ -99,7 +99,7 @@ export default function Chart({
 
     ref.current.innerHTML = "";
 
-    const chart = createChart(ref.current, {
+   const chart = createChart(container, {
       width: ref.current.clientWidth,
       height: 600,
 
@@ -121,9 +121,15 @@ export default function Chart({
     });
 
     // ================= CANDLE =================
-    const candleSeries = chart.addCandlestickSeries();
+  const formattedCandles = candles.map((c) => ({
+  time: Math.floor(c.time / 1000) as UTCTimestamp,
+  open: Number(c.open),
+  high: Number(c.high),
+  low: Number(c.low),
+  close: Number(c.close),
+}));
 
-    candleSeries.setData(candles);
+   candleSeries.setData(formattedCandles);
 
     // ================= EMA =================
     const ema20 = EMA(candles, 20);
