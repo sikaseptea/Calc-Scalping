@@ -691,10 +691,15 @@ useEffect(() => {
   load();
 }, [symbol, timeframe]);
 
-function getLiquidityLevels(swings) {
+function getLiquidityLevels(swings: Swing[]) {
   return {
-    highs: swings.filter(s => s.type === "HIGH").map(s => s.price),
-    lows: swings.filter(s => s.type === "LOW").map(s => s.price),
+    highs: swings
+      .filter(s => s.type === "HIGH")
+      .map(s => s.price),
+
+    lows: swings
+      .filter(s => s.type === "LOW")
+      .map(s => s.price),
   };
 }
 
@@ -730,7 +735,7 @@ function detectSweep(
   };
 }
 
-function getLiquiditySwings(swings) {
+function getLiquiditySwings(swings: Swing[]) {
   return {
     highs: swings.filter(s => s.type === "HIGH"),
     lows: swings.filter(s => s.type === "LOW"),
