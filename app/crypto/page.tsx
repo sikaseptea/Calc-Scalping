@@ -488,8 +488,8 @@ setRsi(r);
 
     setSupport(support);
     setResistance(resistance);
-    setBos(structure.bos);
-    setChoch(structure.choch);
+    setBos(structure.bos as BOS);
+setChoch(structure.choch as CHOCH);
 
   const plan = generateSignalV2(
   last.close,
@@ -614,7 +614,12 @@ function detectStructure(
   const price = data.at(-1)!.close;
 
   let bos: BOS = "SIDEWAYS";
-  let choch: CHOCH = "NONE";
+let choch: CHOCH = "NONE";
+
+return {
+  bos,
+  choch,
+};
 
   // BOS
   if (lastHigh && price > lastHigh.price) bos = "BULLISH";
@@ -635,13 +640,7 @@ if (bos === "BEARISH") {
   }
 }
 
-  if (bos === "SIDEWAYS" && lastHigh && lastLow) {
-  const price = data.at(-1)!.close;
-
-  if (price > lastHigh.price) bos = "BULLISH";
-  if (price < lastLow.price) bos = "BEARISH";
-}
-
+  
 return { bos, choch };
 }
 
