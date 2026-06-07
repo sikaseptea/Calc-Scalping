@@ -473,7 +473,10 @@ setRsi(r);
     const support = Math.min(...c.slice(-50).map(x => x.low));
     const resistance = Math.max(...c.slice(-50).map(x => x.high));
 
-    const structure = detectStructure(c);
+    const structure: {
+  bos: BOS;
+  choch: CHOCH;
+} = detectStructure(c);
 
     setCandles(c);
     setTicker({
@@ -596,7 +599,9 @@ function getSwings(data: Candle[]) {
   return swings;
 }
 
-function detectStructure(data: Candle[]) {
+function detectStructure(
+  data: Candle[]
+): { bos: BOS; choch: CHOCH } {
   const swings = getSwings(data);
 
   if (swings.length < 10) {
