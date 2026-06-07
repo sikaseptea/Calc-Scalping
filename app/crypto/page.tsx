@@ -17,6 +17,11 @@ type Candle = {
 };
 type BOS = "BULLISH" | "BEARISH" | "SIDEWAYS";
 type CHOCH = "BULLISH" | "BEARISH" | "NONE";
+type Swing = {
+  type: "HIGH" | "LOW";
+  price: number;
+  index: number;
+};
 type MarketState = "BULLISH" | "BEARISH" | "SIDEWAYS" | "NONE";
 
 function fmt(n: number | undefined, d = 2) {
@@ -488,8 +493,8 @@ setRsi(r);
 
     setSupport(support);
     setResistance(resistance);
-    setBos(structure.bos as BOS);
-setChoch(structure.choch as CHOCH);
+    setBos(structure.bos as "BULLISH" | "BEARISH" | "SIDEWAYS");
+setChoch(structure.choch as "BULLISH" | "BEARISH" | "NONE");
 
   const plan = generateSignalV2(
   last.close,
@@ -605,43 +610,61 @@ function detectStructure(
   const swings = getSwings(data);
 
   if (swings.length < 10) {
-    return { bos: "SIDEWAYS", choch: "NONE" };
+    return {
+      bos: "SIDEWAYS",
+      choch: "NONE",
+    };
   }
 
-  const lastHigh = [...swings].reverse().find(s => s.type === "HIGH");
-  const lastLow = [...swings].reverse().find(s => s.type === "LOW");
+  const lastHigh =
+    [...swings].reverse().find(
+      s => s.type === "HIGH"
+    );
 
-  const price = data.at(-1)!.close;
+  const lastLow =
+    [...swings].reverse().find(
+      s => s.type === "LOW"
+    );
+
+  const price = data[data.length - 1].close;
 
   let bos: BOS = "SIDEWAYS";
-let choch: CHOCH = "NONE";
-
-return {
-  bos,
-  choch,
-};
+  let choch: CHOCH = "NONE";
 
   // BOS
-  if (lastHigh && price > lastHigh.price) bos = "BULLISH";
-  else if (lastLow && price < lastLow.price) bos = "BEARISH";
+  if (
+    lastHigh &&
+    price > lastHigh.price
+  ) {
+    bos = "BULLISH";
+  } else if (
+    lastLow &&
+    price < lastLow.price
+  ) {
+    bos = "BEARISH";
+  }
 
-  // CHOCH (reversal only)
-  // CHOCH = reversal only after BOS break failure
-
-if (bos === "BULLISH") {
-  if (lastLow && price < lastLow.price) {
+  // CHOCH
+  if (
+    bos === "BULLISH" &&
+    lastLow &&
+    price < lastLow.price
+  ) {
     choch = "BEARISH";
   }
-}
 
-if (bos === "BEARISH") {
-  if (lastHigh && price > lastHigh.price) {
+  if (
+    bos === "BEARISH" &&
+    lastHigh &&
+    price > lastHigh.price
+  ) {
     choch = "BULLISH";
   }
-}
 
-  
-return { bos, choch };
+  return {
+    bos,
+    choch,
+  };
 }
 
 
