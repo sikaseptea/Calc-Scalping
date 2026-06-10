@@ -2,7 +2,15 @@
 
 import { useEffect, useState, useRef } from "react";
 import Chart from "./components/Chart";
-import { AlertTriangle } from "lucide-react";
+import {TrendingUp, TrendingDown, Shuffle, GitBranch,Activity,Minus,Clock3,
+  AlertTriangle,
+  Plus,
+  Trash2
+} from "lucide-react";
+import AlarmBar from "@/components/AlarmBar";
+
+import { useAlarmSystem } from "@/hooks/useAlarmSystem";
+import AlarmPopup from "../../components/AlarmPopup";
 
 const PAIRS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"];
 const TF = ["1m","3m","5m","15m", "1h", "4h", "1d", "1M"];
@@ -105,53 +113,6 @@ function detectBOS(data: Candle[]) {
 
   return "SIDEWAYS";
 }
-{/*function detectCHOCH(
-  data: Candle[],
-  bos: string
-) {
-
-  if (data.length < 20) {
-    return "NONE";
-  }
-
-  let lastSwingHigh = data[0].high;
-  let lastSwingLow = data[0].low;
-
-  for (let i = 2; i < data.length - 2; i++) {
-
-    if (
-      data[i].high > data[i - 1].high &&
-      data[i].high > data[i - 2].high &&
-      data[i].high > data[i + 1].high &&
-      data[i].high > data[i + 2].high
-    ) {
-      lastSwingHigh = data[i].high;
-    }
-
-    if (
-      data[i].low < data[i - 1].low &&
-      data[i].low < data[i - 2].low &&
-      data[i].low < data[i + 1].low &&
-      data[i].low < data[i + 2].low
-    ) {
-      lastSwingLow = data[i].low;
-    }
-  }
-
-  const close = data[data.length - 1].close;
-
-  // trend sebelumnya bullish
-  if (bos === "BULLISH" && close < lastSwingLow) {
-    return "BEARISH";
-  }
-
-  // trend sebelumnya bearish
-  if (bos === "BEARISH" && close > lastSwingHigh) {
-    return "BULLISH";
-  }
-
-  return "NONE";
-}*/}
 
   const TF_MS: Record<string, number> = {
   "1m": 1 * 60 * 1000,
@@ -214,8 +175,32 @@ const [countdown, setCountdown] = useState(0);
 const [signal, setSignal] = useState<any>(null);
 const [bias, setBias] = useState("SIDEWAYS");
 const [confidence, setConfidence] = useState(0);
+const [pattern, setPattern] = useState<any>({
+  name: "NONE",
+  strength: 0,
+  status: "WAITING",
+  target: 0,
+  neckline: 0,
+});
 
 const [isReloading, setIsReloading] = useState(false);
+const [activeAlert, setActiveAlert] = useState<any>(null);
+const audioRef = useRef<HTMLAudioElement | null>(null);
+
+const {
+  alarms,
+  addAlarm,
+  removeAlarm,
+  clearAllAlarms,
+} = useAlarmSystem(
+  ticker.price,
+  symbol,
+  { bos, choch, support, resistance },
+  (alarm) => {
+    setActiveAlert(alarm);
+    startSound();
+  }
+);
 
 const lastCandleOpenRef = useRef<number | null>(null);
 const fetchLockRef = useRef(false);
@@ -226,9 +211,31 @@ const [mounted, setMounted] = useState(false);
 // 🔥 SWEEP ALERT (INI YANG BARU DAN BENAR)
 const [sweepAlert, setSweepAlert] = useState<any>(null);
 const lastSweepRef = useRef<number>(0);
-  
  
+ 
+ 
+function startSound() {
+  if (!audioRef.current) {
+    audioRef.current = new Audio("/alarm.mp3");
+    audioRef.current.loop = true;
+    audioRef.current.volume = 0.8;
+  }
 
+  audioRef.current.play().catch(() => {});
+}
+
+function stopSound() {
+  if (audioRef.current) {
+    audioRef.current.pause();
+    audioRef.current.currentTime = 0;
+  }
+}
+
+useEffect(() => {
+  if (!activeAlert) {
+    stopSound();
+  }
+}, [activeAlert]);
   
   
   
@@ -284,6 +291,7 @@ useEffect(() => {
     clearInterval(interval);
   };
 }, [symbol, timeframe,]);
+
 
 function getConfirmations(
   bos: BOS,
@@ -483,6 +491,9 @@ setRsi(r);
   choch: CHOCH;
 } = detectStructure(c);
 
+const detectedPattern = detectPattern(c);
+setPattern(detectedPattern);
+
     setCandles(c);
     setTicker({
       open: last.open,
@@ -667,6 +678,135 @@ function detectStructure(
   };
 }
 
+function detectPattern(data: Candle[]) {
+
+  const swings = getSwings(data);
+
+  const highs = swings.filter(s => s.type === "HIGH").slice(-3);
+  const lows = swings.filter(s => s.type === "LOW").slice(-3);
+
+  const price = data[data.length - 1].close;
+
+  // =========================
+  // HEAD & SHOULDERS
+  // =========================
+  if (highs.length === 3 && lows.length >= 2) {
+
+    const left = highs[0].price;
+    const head = highs[1].price;
+    const right = highs[2].price;
+
+    const shoulderDiff =
+      Math.abs(left - right) /
+      ((left + right) / 2);
+
+    if (
+      head > left &&
+      head > right &&
+      shoulderDiff < 0.02
+    ) {
+
+      const neckline =
+        (lows[lows.length - 1].price +
+          lows[lows.length - 2].price) / 2;
+
+      return {
+        name: "HEAD_AND_SHOULDERS",
+        strength: 87,
+        status: price < neckline
+          ? "CONFIRMED"
+          : "FORMING",
+        neckline,
+        target: neckline - (head - neckline),
+      };
+    }
+  }
+
+  // =========================
+  // INVERSE H&S
+  // =========================
+  if (lows.length === 3 && highs.length >= 2) {
+
+    const left = lows[0].price;
+    const head = lows[1].price;
+    const right = lows[2].price;
+
+    const shoulderDiff =
+      Math.abs(left - right) /
+      ((left + right) / 2);
+
+    if (
+      head < left &&
+      head < right &&
+      shoulderDiff < 0.02
+    ) {
+
+      const neckline =
+        (highs[highs.length - 1].price +
+          highs[highs.length - 2].price) / 2;
+
+      return {
+        name: "INVERSE_HEAD_AND_SHOULDERS",
+        strength: 87,
+        status: price > neckline
+          ? "CONFIRMED"
+          : "FORMING",
+        neckline,
+        target: neckline + (neckline - head),
+      };
+    }
+  }
+
+  // =========================
+  // DOUBLE TOP
+  // =========================
+  if (highs.length === 3) {
+
+    const a = highs[1].price;
+    const b = highs[2].price;
+
+    if (
+      Math.abs(a - b) / a < 0.01
+    ) {
+      return {
+        name: "DOUBLE_TOP",
+        strength: 78,
+        status: "FORMING",
+        neckline: lows[lows.length - 1]?.price ?? 0,
+        target: lows[lows.length - 1]?.price ?? 0,
+      };
+    }
+  }
+
+  // =========================
+  // DOUBLE BOTTOM
+  // =========================
+  if (lows.length === 3) {
+
+    const a = lows[1].price;
+    const b = lows[2].price;
+
+    if (
+      Math.abs(a - b) / a < 0.01
+    ) {
+      return {
+        name: "DOUBLE_BOTTOM",
+        strength: 78,
+        status: "FORMING",
+        neckline: highs[highs.length - 1]?.price ?? 0,
+        target: highs[highs.length - 1]?.price ?? 0,
+      };
+    }
+  }
+
+  return {
+    name: "NONE",
+    strength: 0,
+    status: "WAITING",
+    neckline: 0,
+    target: 0,
+  };
+}
 
 
 
@@ -699,6 +839,15 @@ function detectStructure(
 useEffect(() => {
   setMounted(true);
 }, []);
+ 
+ useEffect(() => {
+  if (typeof window !== "undefined") {
+    if (Notification.permission !== "granted") {
+      Notification.requestPermission();
+    }
+  }
+}, []);
+ 
  
  useEffect(() => {
   fetchLockRef.current = false;
@@ -809,9 +958,129 @@ function resetAll(
 }
 
 
-  return (
+ 
+ return (
+  <>
+  <AlarmPopup
+  alert={activeAlert}
+  price={ticker.price}
+  stopSound={stopSound}
+  onClose={() => setActiveAlert(null)}
+/>
+
+{/* TOP BAR */}
+ <div className="rounded-1xl bg-white/5 border border-white/10 p-1">
+<div className="rounded-1xl flex items-center gap-3 p-1">
+<AlarmBar
+  addAlarm={addAlarm}
+  symbol={symbol}
+  livePrice={ticker.price}
+  support={support}
+  resistance={resistance}
+/>
+
+<button
+  onClick={clearAllAlarms}
+  className="
+    flex items-center justify-center
+    w-9 h-9 rounded-lg
+    bg-red-500 hover:bg-red-600
+  "
+  title="Clear All Alarms"
+>
+  <Trash2 size={16} />
+</button>
+
+
+    {/* ACTIVE ALARMS LIST */}
+    <div className="flex gap-2 relative z-50">
+  {alarms.map((a) => (
+  <div
+    key={a.id}
+    className={`
+      flex items-center gap-2
+      px-3 py-1
+      rounded-lg border
+
+      ${
+        a.triggeredAt
+          ? "bg-red-500/20 border-red-400"
+          : "bg-white/10 border-white/10"
+      }
+    `}
+  >
+      <span
+  className={`text-xs ${
+    a.triggeredAt
+      ? "text-red-300"
+      : "text-white"
+  }`}
+>
+        {a.symbol} | {a.type} | {a.price}
+      </span>
+
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          removeAlarm(a.id);
+        }}
+        className="text-red-400 hover:text-red-300 cursor-pointer"
+      >
+        ✕
+      </button>
+	  
+    </div>
+  ))}
+</div>
   
-   
+  {/* RIGHT SIDE */}
+  <div className="flex items-center gap-2 ml-auto relative z-50 p-1">
+
+    {/* ADD BUTTON */}
+  
+<div className="rounded-1xl bg-white/5 border border-white/10 p-1  text-xl font-bold ">
+        🚨 By Sikasep Ado
+      </div>
+
+
+</div>
+  </div>
+
+</div>
+
+
+	 {/*{activeAlert && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+
+    <div className="w-[340px] rounded-2xl border border-red-500 bg-black p-6 text-center shadow-xl">
+
+      <div className="text-red-400 text-xl font-bold mb-3">
+        🚨 ALARM TRIGGERED
+      </div>
+
+      <div className="space-y-2 text-sm text-white">
+        <div><b>Symbol:</b> {activeAlert.symbol}</div>
+        <div><b>Type:</b> {activeAlert.type}</div>
+        <div className="text-yellow-400 text-lg">
+          {activeAlert.livePrice ?? ticker.price}
+        </div>
+      </div>
+
+      <button
+        onClick={() => {
+          setActiveAlert(null);
+          stopSound();
+        }}
+        className="mt-4 w-full bg-red-500 py-2 rounded hover:bg-red-600"
+      >
+        CLOSE ALERT
+      </button>
+
+    </div>
+  </div>
+	 )}*/}
+
   
   
     <div className="min-h-screen bg-gradient-to-br from-black via-slate-950 to-blue-950 text-white p-6">
@@ -844,63 +1113,87 @@ function resetAll(
 )}
 
       {/* TOP CARDS */}
-      <div className="grid grid-cols-2 md:grid-cols-7 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-8 gap-4 mb-6">
 
 	  <div className="p-6 rounded-2xl bg-white/5 backdrop-blur-md border border-white/10">
-          {/*<div className="text-xs text-zinc-400 uppercase">
-           📈 Live Price
-          </div>*/}
 
-<div className="flex gap-3 mb-6">
+  {/* Pair + TF */}
+  <div className="grid grid-cols-2 gap-3 mb-8">
 
-        <select
-          value={symbol}
-          onChange={(e) => setSymbol(e.target.value)}
-          className="transition bg-black/40 border border-white/10 rounded-xl p-0 text-center"
-        >
-          {PAIRS.map((p) => (
-            <option key={p}>{p}</option>
-          ))}
-        </select>
+    <select
+      value={symbol}
+      onChange={(e) => setSymbol(e.target.value)}
+      className="
+        bg-black/40 border border-white/10 rounded-xl
+        p-3 text-center text-sm
+        hover:border-cyan-500/40 transition-all
+      "
+    >
+      {PAIRS.map((p) => (
+        <option key={p}>{p}</option>
+      ))}
+    </select>
 
-        <select
-          value={timeframe}
-          onChange={(e) => setTimeframe(e.target.value)}
-          className="bg-black/40 border border-white/10 rounded-xl p-1 text-center"
-        >
-          {TF.map((t) => (
-            <option key={t}>{t}</option>
-          ))}
-        </select>
+    <select
+      value={timeframe}
+      onChange={(e) => setTimeframe(e.target.value)}
+      className="
+        bg-black/40 border border-white/10 rounded-xl
+        p-3 text-center text-sm
+        hover:border-cyan-500/40 transition-all
+      "
+    >
+      {TF.map((t) => (
+        <option key={t}>{t}</option>
+      ))}
+    </select>
 
-       {/* <button
-          onClick={load}
-          className="px-5 rounded-xl bg-green-500 text-black font-bold"
-        >
-          LOAD
-        </button>*/}
+  </div>
+
+
+  {/* Price */}
+  <div className="flex flex-col items-center">
+
+    <div className="text-xs uppercase tracking-widest text-zinc-500 mb-2">
+      Live Price
+    </div>
+
+    <div
+      className={`
+        text-4xl font-black text-yellow-300 tracking-tight
+        transition-all duration-300
+        ${isReloading ? "animate-pulse" : ""}
+      `}
+    >
+      ${fmt(ticker.price)}
+    </div>
+
+  </div>
+
+
+  {/* Countdown */}
+  <div className="mt-8">
+
+    <div className="bg-black/30 border border-white/10 rounded-xl p-4 text-center">
+
+      <div className="text-xs uppercase tracking-wider text-zinc-500 mb-2">
+        ⏳ Candle Closes In
       </div>
-          <div className="text-4xl text-yellow-300 font-bold mt-8 text-center ">
-            ${fmt(ticker.price)}
-          </div>
-		  
 
-<div className="mt-3 text-center">
-  <div className="text-xs text-zinc-400">
-    ⏳ Candle closes in
-  </div>
+      <div className="text-2xl font-bold text-cyan-400">
+        {formatCountdown(countdown)}
+      </div>
 
-  <div className="text-xl font-bold text-cyan-400">
-    {formatCountdown(countdown)}
-  </div>
-  
-  {isReloading && (
-  <div className="text-xs text-yellow-400 text-center mt-2">
-    🔄 Refreshing new candle...
-  </div>
-)}
- 
-  
+      {isReloading && (
+        <div className="mt-3 text-xs text-yellow-400 animate-pulse">
+          🔄 Refreshing new candle...
+        </div>
+      )}
+
+    </div>
+
+
+
 </div>
 		  
         </div>
@@ -928,7 +1221,7 @@ function resetAll(
   <div className="text-white text-right">{fmt(signal.entry)}</div>
 
   <div className="text-zinc-400">SL</div>
-  <div className="text-red-400 text-right">{fmt(signal.sl)}</div>
+  <div className="text-red-400 transition-all text-right">{fmt(signal.sl)}</div>
 
   <div className="text-zinc-400">TP1</div>
   <div className="text-green-400 text-right">{fmt(signal.tp1)}</div>
@@ -959,11 +1252,11 @@ function resetAll(
         {/* OHLC */}
   <div className="rounded-3xl bg-white/5 backdrop-blur-md border border-white/10 p-6">
 
-    <div className="text-zinc-400 text-sm mb-5">
+    <div className="text-zinc-400  mb-5">
       📈 OHLC
     </div>
 
-    <div className="grid grid-cols-2 gap-6 text-center">
+    <div className="p-1 grid grid-cols-1 gap-2 text-center">
 
       <div>
         <div className="text-zinc-500 text-sm">OPEN</div>
@@ -1001,27 +1294,27 @@ function resetAll(
 		<div className="rounded-3xl bg-white/5 border border-white/10 p-6">
 
   <div className="text-zinc-400 mb-5">
-   📈 Support & Resistance
+   📈 SR
   </div>
 
   <div className="space-y-6 text-center">
 
     <div>
-      <div className="text-sm text-zinc-500">
+      <div className="p-2 text-sm text-zinc-500">
         Resistance
       </div>
 
-      <div className="text-2xl font-bold text-red-400">
+      <div className="text-4xl font-bold text-red-400">
         {fmt(resistance)}
       </div>
     </div>
 
     <div>
-      <div className="text-sm text-zinc-500">
+      <div className="p-2 text-sm text-zinc-500">
         Support
       </div>
 
-      <div className="text-2xl font-bold text-green-400">
+      <div className="text-4xl font-bold text-green-400">
         {fmt(support)}
       </div>
     </div>
@@ -1038,120 +1331,236 @@ function resetAll(
 
 <div className="rounded-3xl bg-white/5 border border-white/10 p-6">
   
-  <div className="space-y-4 text-center">
-     BOS
+  <div className="space-y-4">
+ 📊 <span>Structure</span>
+  {/* BOS */}
+  <div className=" p-6 flex flex-col items-center">
+    <div className="flex items-center gap-2 text-zinc-400 text-sm uppercase tracking-wider mb-3">
+      {bos === "BULLISH" ? (
+        <TrendingUp size={18} className="text-green-400" />
+      ) : (
+        <TrendingDown size={18} className="text-red-400" />
+      )}
+      <span>BOS</span>
+    </div>
+
+    <div
+      className={`text-3xl font-bold ${
+        bos === "BULLISH"
+          ? "text-green-400"
+          : bos === "BEARISH"
+          ? "text-red-400"
+          : "text-zinc-400"
+      }`}
+    >
+      {bos}
+    </div>
   </div>
 
-  <div
-    className={`text-3xl font-bold text-center ${
-      bos === "BULLISH"
-        ? "text-green-400"
-        : bos === "BEARISH"
-        ? "text-red-400"
-        : "text-zinc-400"
-    }`}
-  >
-    {bos}
-  </div>
-<div className="space-y-4 text-center p-6">
-       
- </div>
+  {/* CHOCH */}
+  <div className=" p-6 flex flex-col items-center">
+    <div className="flex items-center gap-2 text-zinc-400 text-sm uppercase tracking-wider mb-3">
+      <GitBranch size={18} className="text-yellow-400" />
+      <span>CHOCH</span>
+    </div>
 
- <div className="space-y-4 text-center">
-    CHOCH
- </div>
+    <div
+      className={`text-3xl font-bold ${
+        choch === "BULLISH"
+          ? "text-green-400"
+          : choch === "BEARISH"
+          ? "text-red-400"
+          : "text-zinc-400"
+      }`}
+    >
+      {choch}
+    </div>
 
- <div
-    className={`text-3xl font-bold text-center ${
-      choch === "BULLISH"
-        ? "text-green-400"
-        : choch === "BEARISH"
-        ? "text-red-400"
-        : "text-zinc-400"
-    }`}
-  >
-    {choch}
-  </div>
+
+</div>
+
+</div>
 </div>
 {/* MARKET INFO */}
   <div className="rounded-3xl bg-white/5 backdrop-blur-md border border-white/10 p-6">
 
-    <div className="text-zinc-400 text-sm mb-5">
-      📊 Market Info
+    <div className="text-zinc-400  mb-5 flex items-center gap-2">
+  📊 <span>Market Info</span>
+</div>
+
+<div className="space-y-4">
+
+  {/* RSI */}
+  <div className=" p-5 flex flex-col items-center">
+    <div className="flex items-center gap-2 text-zinc-500 text-sm uppercase tracking-wider mb-2">
+      <Activity size={16} className="text-cyan-400" />
+      <span>RSI</span>
     </div>
 
-    <div className="space-y-4 text-center">
-
-      <div>
-        <div className="text-zinc-500 text-sm">
-          RSI
-        </div>
-
-        <div className="text-2xl font-bold text-cyan-400">
-          {fmt(rsi)}
-        </div>
-      </div>
-
-      <div>
-        <div className="text-zinc-500 text-sm">
-          Trend
-        </div>
-
-        <div className="text-2xl font-bold">
-          {trend}
-        </div>
-      </div>
-
-
+    <div className="text-3xl font-bold text-cyan-400">
+      {fmt(rsi)}
     </div>
+  </div>
+
+  {/* Trend */}
+  <div className=" p-5 flex flex-col items-center">
+    <div className="flex items-center gap-2 text-zinc-500 text-sm uppercase tracking-wider mb-2">
+
+      {trend === "UPTREND" ? (
+        <TrendingUp size={16} className="text-green-400" />
+      ) : trend === "DOWNTREND" ? (
+        <TrendingDown size={16} className="text-red-400" />
+      ) : (
+        <Minus size={16} className="text-yellow-400" />
+      )}
+
+      <span>TREND</span>
+    </div>
+
+    <div
+      className={`text-3xl font-bold ${
+        trend === "UPTREND"
+          ? "text-green-400"
+          : trend === "DOWNTREND"
+          ? "text-red-400"
+          : "text-yellow-400"
+      }`}
+    >
+      {trend}
+    </div>
+  </div>
+
+</div>
 	
 	
       </div>
-	  
+	  <div className="rounded-3xl bg-white/5 border border-white/10 p-6">
+
+    <div className="text-zinc-400 mb-5">
+    🧩 Pattern Engine
+  </div>
+
+  <div className="space-y-4">
+
+    <div>
+      
+
+      <div className="text-l font-bold text-yellow-300">
+        {pattern.name.replaceAll("_"," ")}
+      </div>
+    </div>
+
+    <div>
+      <div className="text-zinc-500 text-sm">
+        Strength
+      </div>
+
+      <div className="text-cyan-400">
+        {pattern.strength}%
+      </div>
+    </div>
+
+    <div>
+      <div className="text-zinc-500 text-sm">
+        Status
+      </div>
+<div className={
+        pattern.status === "CONFIRMED"
+          ? "text-green-400"
+          : "text-yellow-400"
+      }>
+        {pattern.status}
+      </div>
+      
+    </div>
+
+    <div>
+      <div className="text-zinc-500 text-sm">
+        Neckline | Target
+      </div>
+
+      <div>
+        {fmt(pattern.neckline)} | {fmt(pattern.target)}
+      </div>
+    </div>
+
+    <div>
+      
+    </div>
+
+  </div>
+
+
+
+</div>
 	  <div className="p-4 rounded-2xl bg-white/5 backdrop-blur-md border border-white/10">
-          <div className="text-xs text-zinc-400 uppercase">
-          📊  Forecast
-          </div>
+          <div className="p-2 flex items-center gap-3  text-zinc-400 uppercase mb-5">
+  <Clock3 size={14} />
+  <span>Forecast</span>
+</div>
 
-          <div className="grid grid-cols-2 gap-y-4 gap-x-6 mt-5 text-center">
+<div className="grid grid-cols-2 gap-4">
 
-  <div>
-    <div className="text-zinc-500 text-sm">15m</div>
-    <div className="font-bold">
+  {/* 15m */}
+  <div className=" p-1 text-center">
+    <div className="text-xs text-zinc-500 uppercase mb-2">
+      15m
+    </div>
+
+    <div className="text-l text-center font-bold text-white">
       {fc?.["15m"] ?? "-"}
     </div>
   </div>
 
-  <div>
-    <div className="text-zinc-500 text-sm">1h</div>
-    <div className="font-bold">
+  {/* 1h */}
+  <div className=" p-1 text-center">
+    <div className="text-xs text-zinc-500 uppercase mb-2">
+      1H
+    </div>
+
+    <div className="text-l text-center font-bold text-white">
       {fc?.["1h"] ?? "-"}
     </div>
   </div>
 
-  <div>
-    <div className="text-zinc-500 text-sm">4h</div>
-    <div className="font-bold">
+  {/* 4h */}
+  <div className=" p-1 text-center">
+    <div className="text-xs text-zinc-500 uppercase mb-2">
+      4H
+    </div>
+
+    <div className="text-l text-center font-bold text-white">
       {fc?.["4h"] ?? "-"}
     </div>
   </div>
 
-  <div>
-    <div className="text-zinc-500 text-sm">1D</div>
-    <div className="font-bold">
+  {/* 1D */}
+  <div className=" p-1 text-center">
+    <div className="text-xs text-zinc-500 uppercase mb-2">
+      1D
+    </div>
+
+    <div className="text-l text-center font-bold text-white">
       {fc?.["1d"] ?? "-"}
     </div>
   </div>
 
-  <div className="col-span-2">
-    <div className="text-zinc-500 text-sm">1M</div>
-    <div className="font-bold">
+  {/* 1M */}
+  <div className="col-span-2  rounded-xl p-1 text-center">
+    <div className="text-xs text-zinc-500 uppercase mb-2">
+      1M
+    </div>
+
+    <div className="text-xl font-bold text-cyan-400">
       {fc?.["1M"] ?? "-"}
     </div>
-	
   </div>
 
+
+
+
 </div>
+
 
 
 	  {/* MARKET INFO + OHLC */}
@@ -1161,11 +1570,17 @@ function resetAll(
 
   </div>
 
+ 
+
   
+
+
 
   </div>
 
 </div>
+
+
 
       {/* INDICATORS 
       <div className="mb-3 text-zinc-400 text-sm">
@@ -1181,6 +1596,7 @@ function resetAll(
       
 
     </div>
+	</>
   );
   
 }

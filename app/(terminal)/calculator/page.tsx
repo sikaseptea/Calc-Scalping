@@ -10,7 +10,19 @@ const MEMBERS = [
 ];
 
 // ================= TP BAR =================
-function TPBar({ label, value, percent, color }: any) {
+type TPBarProps = {
+  label: string;
+  value: number;
+  percent: number;
+  color: string;
+};
+
+function TPBar({
+  label,
+  value,
+  percent,
+  color,
+}: TPBarProps) {
   const p = Math.max(0, Math.min(percent || 0, 100));
   if (p <= 0) return null;
 

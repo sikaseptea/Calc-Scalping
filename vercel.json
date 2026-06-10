@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/sikasep/etf-ingest",
+      "schedule": "0 0 * * *"
+    }
+  ]
+}

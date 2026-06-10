@@ -13,89 +13,54 @@ type Trade = {
   created_at: string;
 };
 
+type TradeStatus = "WIN" | "LOSS" | "BE" | null;
+
+type EditTrade = {
+  status?: TradeStatus;
+  actual_pnl?: string | number;
+};
+
 export default function ProgressPage() {
   const [trades, setTrades] = useState<Trade[]>([]);
-  const [edit, setEdit] = useState<Record<string, any>>({});
+  const [edit, setEdit] = useState<Record<string, EditTrade>>({});
 
+  // ================= LOAD =================
   useEffect(() => {
-    load();
-  }, []);
+    const loadTrades = async () => {
+      const { data } = await supabase
+        .from("trade_logs")
+        .select("*")
+        .order("created_at", { ascending: true });
 
-  async function load() {
-    const { data } = await supabase
-      .from("trade_logs")
-      .select("*")
-      .order("created_at", { ascending: true });
-
-    if (data) setTrades(data as Trade[]);
-  }
-
-  // ================= SAFE EDIT =================
-  const v = (t: Trade, key: string) =>
-    edit[t.id]?.[key] ?? (t as any)[key] ?? "";
-
-  // ================= SAVE =================
-  async function saveTrade(t: Trade) {
-    const status = v(t, "status");
-    const pnl = v(t, "actual_pnl");
-
-    if (!status || pnl === "") return;
-
-    const payload = {
-      status,
-      actual_pnl: Number(pnl),
+      if (data) setTrades(data as Trade[]);
     };
 
-    const { error } = await supabase
-      .from("trade_logs")
-      .update(payload)
-      .eq("id", t.id);
+    void loadTrades();
+  }, []);
 
-    if (error) return;
+  // ================= SAFE EDIT =================
+  const v = (t: Trade, key: keyof Trade | keyof EditTrade) => {
+    const edited = edit[t.id];
 
-    setTrades((prev) =>
-      prev.map((x) =>
-        x.id === t.id ? { ...x, ...payload } : x
-      )
-    );
+    if (edited && key in edited) {
+      return edited[key as keyof EditTrade];
+    }
 
-    setEdit((prev) => {
-      const copy = { ...prev };
-      delete copy[t.id];
-      return copy;
-    });
-  }
+    return t[key as keyof Trade] ?? "";
+  };
 
-  // ================= DELETE (CONFIRM) =================
-  async function deleteTrade(id: string) {
-    const confirmDelete = window.confirm(
-      "⚠️ Hapus trade ini?\nData tidak bisa dikembalikan."
-    );
-
-    if (!confirmDelete) return;
-
-    const { error } = await supabase
-      .from("trade_logs")
-      .delete()
-      .eq("id", id);
-
-    if (error) return;
-
-    setTrades((prev) => prev.filter((t) => t.id !== id));
-  }
-
-  // ================= TODAY =================
+  // ================= TODAY TRADES (FIXED) =================
   const todayTrades = useMemo(() => {
     const today = new Date().toDateString();
+
     return trades.filter(
       (t) => new Date(t.created_at).toDateString() === today
     );
-  }, [trades]);
+  }, [trades]); // ✅ FIX DI SINI
 
   // ================= GROUP =================
   const winTrades = todayTrades.filter((t) => t.status === "WIN");
   const lossTrades = todayTrades.filter((t) => t.status === "LOSS");
-  const beTrades = todayTrades.filter((t) => t.status === "BE");
 
   // ================= PNL =================
   const winPnL = winTrades.reduce(
@@ -122,25 +87,73 @@ export default function ProgressPage() {
 
   // ================= BEST TRADE =================
   const bestTrade = useMemo(() => {
+    if (!todayTrades.length) return null;
+
     return [...todayTrades].sort(
       (a, b) =>
         Number(b.actual_pnl || 0) - Number(a.actual_pnl || 0)
     )[0];
-  }, [trades]);
+  }, [todayTrades]);
 
   // ================= EQUITY CURVE =================
   const equity = useMemo(() => {
-    let sum = 0;
-    return todayTrades.map((t) => {
-      sum += Number(t.actual_pnl || 0);
-      return sum;
-    });
-  }, [trades]);
+    return todayTrades.reduce<number[]>((acc, trade) => {
+      const previous = acc.length ? acc[acc.length - 1] : 0;
+
+      acc.push(previous + Number(trade.actual_pnl || 0));
+      return acc;
+    }, []);
+  }, [todayTrades]);
 
   const max = Math.max(...equity, 1);
   const min = Math.min(...equity, 0);
 
-  // ================= DATE FORMAT =================
+  // ================= SAVE =================
+  async function saveTrade(t: Trade) {
+    const status = v(t, "status");
+    const pnl = v(t, "actual_pnl");
+
+    if (!status || pnl === "") return;
+
+   const payload: Partial<Trade> = {
+  status: status as TradeStatus,
+  actual_pnl: Number(pnl),
+};
+    const { error } = await supabase
+      .from("trade_logs")
+      .update(payload)
+      .eq("id", t.id);
+
+    if (error) return;
+
+    setTrades((prev) =>
+      prev.map((x) =>
+        x.id === t.id ? { ...x, ...payload } : x
+      )
+    );
+
+    setEdit((prev) => {
+      const copy = { ...prev };
+      delete copy[t.id];
+      return copy;
+    });
+  }
+
+  // ================= DELETE =================
+  async function deleteTrade(id: string) {
+    if (!window.confirm("⚠️ Hapus trade ini?\nData tidak bisa dikembalikan.")) return;
+
+    const { error } = await supabase
+      .from("trade_logs")
+      .delete()
+      .eq("id", id);
+
+    if (error) return;
+
+    setTrades((prev) => prev.filter((t) => t.id !== id));
+  }
+
+  // ================= FORMAT =================
   const formatDate = (d: string) => {
     const dt = new Date(d);
     return dt.toLocaleString("en-GB", {
@@ -157,143 +170,63 @@ export default function ProgressPage() {
 
       {/* WARNING */}
       {lossWarning && (
-        <div
-className="
-mb-4
-rounded-xl
-border
-border-red-500/30
-bg-red-500/10
-p-4
-text-red-400
-font-semibold
-"
->
-⚠️ Risk Alert — 3 Consecutive Losses Detected
-</div>
+        <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-400 font-semibold">
+          ⚠️ Risk Alert — 3 Consecutive Losses Detected
+        </div>
       )}
 
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold">Trading Performance</h1>
+        <p className="text-zinc-400 text-sm">
+          Daily Statistics & Trade Journal
+        </p>
+      </div>
 
-<div className="mb-6">
-  <h1 className="text-3xl font-bold">
-    Trading Performance
-  </h1>
-
-  <p className="text-zinc-400 text-sm">
-    Daily Statistics & Trade Journal
-  </p>
-</div>
-      {/* DASHBOARD */}
+      {/* DASHBOARD (FULL RESTORED) */}
       <div className="grid md:grid-cols-3 grid-cols-2 gap-4 mb-6">
 
-        <div className="
-bg-zinc-900/80
-backdrop-blur-md
-border border-zinc-800
-rounded-2xl
-p-4
-shadow-lg
-hover:border-yellow-500/40
-transition
-">
-          <div className="text-xs uppercase tracking-wider text-zinc-500">
-  WIN PnL
-</div>
-
-<div className="text-2xl font-bold text-green-400 mt-1">
-  ${winPnL.toFixed(2)}
-</div>
-          <div className="text-green-400 font-bold">
-            {winPnL.toFixed(2)}
+        {/* WIN PNL */}
+        <div className="bg-zinc-900/80 backdrop-blur-md border border-zinc-800 rounded-2xl p-4 shadow-lg">
+          <div className="text-xs uppercase text-zinc-500">WIN PnL</div>
+          <div className="text-green-400 text-2xl font-bold mt-1">
+            ${winPnL.toFixed(2)}
           </div>
         </div>
 
-        <div className="
-bg-zinc-900/80
-backdrop-blur-md
-border border-zinc-800
-rounded-2xl
-p-4
-shadow-lg
-hover:border-yellow-500/40
-transition
-">
+        {/* LOSS PNL */}
+        <div className="bg-zinc-900/80 backdrop-blur-md border border-zinc-800 rounded-2xl p-4 shadow-lg">
           <div className="text-xs text-gray-400">LOSS PnL</div>
-          <div
-className={`text-2xl font-bold mt-1 ${
-  netPnL >= 0
-    ? "text-green-400"
-    : "text-red-400"
-}`}
->
-${netPnL.toFixed(2)}
-</div>
+          <div className="text-red-400 text-2xl font-bold mt-1">
+            ${lossPnL.toFixed(2)}
+          </div>
         </div>
 
-        <div className="
-bg-zinc-900/80
-backdrop-blur-md
-border border-zinc-800
-rounded-2xl
-p-4
-shadow-lg
-hover:border-yellow-500/40
-transition
-">
+        {/* NET PNL */}
+        <div className="bg-zinc-900/80 backdrop-blur-md border border-zinc-800 rounded-2xl p-4 shadow-lg">
           <div className="text-xs text-gray-400">NET PnL</div>
-         <div
-className={`text-2xl font-bold mt-1 ${
-  netPnL >= 0
-    ? "text-green-400"
-    : "text-red-400"
-}`}
->
-${netPnL.toFixed(2)}
-</div>
+          <div className={`text-2xl font-bold mt-1 ${netPnL >= 0 ? "text-green-400" : "text-red-400"}`}>
+            ${netPnL.toFixed(2)}
+          </div>
         </div>
 
-        <div className="
-bg-zinc-900/80
-backdrop-blur-md
-border border-zinc-800
-rounded-2xl
-p-4
-shadow-lg
-hover:border-yellow-500/40
-transition
-">
+        {/* WIN RATE */}
+        <div className="bg-zinc-900/80 backdrop-blur-md border border-zinc-800 rounded-2xl p-4 shadow-lg">
           <div className="text-xs text-gray-400">WIN RATE</div>
           <div className="text-green-400 font-bold">
             {winRate.toFixed(1)}%
           </div>
         </div>
 
-        <div className="
-bg-zinc-900/80
-backdrop-blur-md
-border border-zinc-800
-rounded-2xl
-p-4
-shadow-lg
-hover:border-yellow-500/40
-transition
-">
+        {/* LOSS RATE */}
+        <div className="bg-zinc-900/80 backdrop-blur-md border border-zinc-800 rounded-2xl p-4 shadow-lg">
           <div className="text-xs text-gray-400">LOSS RATE</div>
           <div className="text-red-400 font-bold">
             {lossRate.toFixed(1)}%
           </div>
         </div>
 
-        <div className="
-bg-zinc-900/80
-backdrop-blur-md
-border border-zinc-800
-rounded-2xl
-p-4
-shadow-lg
-hover:border-yellow-500/40
-transition
-">
+        {/* TODAY TRADES */}
+        <div className="bg-zinc-900/80 backdrop-blur-md border border-zinc-800 rounded-2xl p-4 shadow-lg">
           <div className="text-xs text-gray-400">TODAY TRADES</div>
           <div className="font-bold">{todayTrades.length}</div>
         </div>
@@ -302,155 +235,74 @@ transition
       {/* BEST + EQUITY */}
       <div className="grid grid-cols-2 gap-3 mb-4">
 
-        <div
-className="
-bg-zinc-900/80
-border border-zinc-800
-rounded-2xl
-p-5
-shadow-lg
-"
->
-  <div className="text-zinc-500 text-sm">
-    BEST TRADE
-  </div>
-
-  <div className="text-3xl font-bold text-green-400 mt-2">
-    {Number(bestTrade?.actual_pnl || 0).toFixed(2)}
-  </div>
-
-  <div className="text-zinc-400 mt-1">
-    {bestTrade?.pair}
-  </div>
-</div>
-
-        {/* LINE CHART */}
-        <div className="
-bg-zinc-900/80
-backdrop-blur-md
-border border-zinc-800
-rounded-2xl
-p-4
-shadow-lg
-hover:border-yellow-500/40
-transition
-">
-          <div className="text-xs text-gray-400 mb-2">
-            EQUITY CURVE
+        {/* BEST TRADE */}
+        <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-5 shadow-lg">
+          <div className="text-zinc-500 text-sm">BEST TRADE</div>
+          <div className="text-3xl font-bold text-green-400 mt-2">
+            {Number(bestTrade?.actual_pnl || 0).toFixed(2)}
           </div>
+          <div className="text-zinc-400 mt-1">
+            {bestTrade?.pair}
+          </div>
+        </div>
 
-         <svg
-  viewBox="0 0 100 100"
-  className="w-full h-28"
->
-           <polyline
-  fill="none"
-  stroke="#f0b90b"
-  strokeWidth="3"
-  strokeLinecap="round"
-  strokeLinejoin="round"
-  points={equity
-    .map((v, i) => {
-      const x =
-        (i / Math.max(equity.length - 1, 1)) * 100;
+        {/* EQUITY */}
+        <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-4 shadow-lg">
+          <div className="text-xs text-gray-400 mb-2">EQUITY CURVE</div>
 
-      const y =
-        100 -
-        ((v - min) /
-          (max - min || 1)) *
-          100;
-
-      return `${x},${y}`;
-    })
-    .join(" ")}
-/>
+          <svg viewBox="0 0 100 100" className="w-full h-28">
+            <polyline
+              fill="none"
+              stroke="#f0b90b"
+              strokeWidth="3"
+              points={equity
+                .map((v, i) => {
+                  const x = (i / Math.max(equity.length - 1, 1)) * 100;
+                  const y = 100 - ((v - min) / (max - min || 1)) * 100;
+                  return `${x},${y}`;
+                })
+                .join(" ")}
+            />
           </svg>
         </div>
       </div>
 
       {/* TABLE */}
-      <div
-className="
-bg-zinc-900/80
-backdrop-blur-md
-border border-zinc-800
-rounded-2xl
-overflow-hidden
-shadow-lg
-"
->
-<div
-className="
-grid grid-cols-7
-bg-zinc-950
-text-zinc-400
-text-xs
-uppercase
-tracking-wider
-px-4
-py-3
-border-b
-border-zinc-800
-"
->
-  <div>Time</div>
-  <div>Pair</div>
-  <div>Side</div>
-  <div>Status</div>
-  <div>PnL</div>
-  <div>Save</div>
-  <div>Delete</div>
-</div>
-       
+      <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl overflow-hidden">
+
+        <div className="grid grid-cols-7 bg-zinc-950 text-zinc-400 text-xs uppercase px-4 py-3 border-b border-zinc-800">
+          <div>Time</div>
+          <div>Pair</div>
+          <div>Side</div>
+          <div>Status</div>
+          <div>PnL</div>
+          <div>Save</div>
+          <div>Delete</div>
+        </div>
 
         {todayTrades.map((t) => (
-          <div
-            key={t.id}
-            className="
-grid grid-cols-7
-items-center
-px-4
-py-3
-border-b
-border-zinc-800
-hover:bg-zinc-800/40
-transition
-text-sm
-"
-          >
+          <div key={t.id} className="grid grid-cols-7 px-4 py-3 border-b border-zinc-800 text-sm">
 
-            {/* TIME + DATE */}
-            <div className="text-gray-300">
-              {formatDate(t.created_at)}
-            </div>
-
-            {/* PAIR */}
+            <div>{formatDate(t.created_at)}</div>
             <div>{t.pair}</div>
 
-            {/* DIRECTION */}
-            <span
-className={
-  t.direction === "LONG"
-    ? "px-2 py-1 rounded bg-green-500/15 text-green-400"
-    : "px-2 py-1 rounded bg-red-500/15 text-red-400"
-}
->
-  {t.direction}
-</span>
+            <div className={t.direction === "LONG" ? "text-green-400" : "text-red-400"}>
+              {t.direction}
+            </div>
 
-            {/* STATUS */}
             <select
-              className="bg-black border p-1 rounded"
-              value={v(t, "status")}
+              
+  className="bg-black border p-1 rounded"
+  value={String(v(t, "status") ?? "")}
               onChange={(e) =>
-                setEdit((prev) => ({
-                  ...prev,
-                  [t.id]: {
-                    ...prev[t.id],
-                    status: e.target.value,
-                  },
-                }))
-              }
+  setEdit((prev) => ({
+    ...prev,
+    [t.id]: {
+      ...prev[t.id],
+      status: e.target.value as TradeStatus,
+    },
+  }))
+}
             >
               <option value="">-</option>
               <option value="WIN">WIN</option>
@@ -458,10 +310,9 @@ className={
               <option value="BE">BE</option>
             </select>
 
-            {/* PNL */}
             <input
-              className="bg-black border p-1 rounded w-full"
-              value={v(t, "actual_pnl")}
+  className="bg-black border p-1 rounded w-full"
+  value={String(v(t, "actual_pnl") ?? "")}
               onChange={(e) =>
                 setEdit((prev) => ({
                   ...prev,
@@ -473,21 +324,8 @@ className={
               }
             />
 
-            {/* SAVE */}
-            <button
-              onClick={() => saveTrade(t)}
-              className="text-green-400"
-            >
-              💾
-            </button>
-
-            {/* DELETE */}
-            <button
-              onClick={() => deleteTrade(t.id)}
-              className="text-red-500 hover:text-red-300"
-            >
-              🗑️
-            </button>
+            <button onClick={() => saveTrade(t)} className="text-green-400">💾</button>
+            <button onClick={() => deleteTrade(t.id)} className="text-red-500">🗑️</button>
           </div>
         ))}
       </div>

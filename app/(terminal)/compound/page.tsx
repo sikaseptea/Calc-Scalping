@@ -26,17 +26,19 @@ export default function CompoundPage() {
   });
 
   useEffect(() => {
-    load();
-  }, []);
-
-  async function load() {
+  const loadTrades = async () => {
     const { data } = await supabase
       .from("trade_logs")
       .select("id, actual_pnl, status, created_at")
       .order("created_at", { ascending: true });
 
-    if (data) setTrades(data as Trade[]);
-  }
+    if (data) {
+      setTrades(data as Trade[]);
+    }
+  };
+
+  void loadTrades();
+}, []);
 
   const handleChange = (key: keyof Params, value: number) => {
     setParams((p) => ({
