@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Inter } from "next/font/google";
 import { startScheduler } from "@/lib/orchestrator/scheduler";
+import { ReactNode } from "react";
 
 export function startETFIngestCron() {
   // jalan sekali saat server start
@@ -38,14 +39,10 @@ export const metadata: Metadata = {
   description: "Trading Scalping By Sikasep Ado",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={inter.variable}>
-      <body className="min-h-screen">
+    <html lang="en" className={inter.variable} suppressHydrationWarning>
+      <body className="min-h-screen" suppressHydrationWarning>
         {children}
       </body>
     </html>

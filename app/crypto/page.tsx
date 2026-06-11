@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import Chart from "./components/Chart";
+import Chart, { Candle as ChartCandle } from "./components/chart/Chart";
 import {TrendingUp, TrendingDown, Shuffle, GitBranch,Activity,Minus,Clock3,
   AlertTriangle,
   Plus,
