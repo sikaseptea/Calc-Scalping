@@ -37,12 +37,12 @@ export default function AlarmBar({
         onChange={(e) => setType(e.target.value as AlarmType)}
         className="bg-white/10 border border-white/10 rounded-lg px-3 py-2 w-[120px]"
       >
-        <option value="PRICE_ABOVE">Price Above</option>
-        <option value="PRICE_BELOW">Price Below</option>
-        <option value="SUPPORT_TOUCH">Support Touch</option>
-        <option value="RESISTANCE_TOUCH">Resistance Touch</option>
-        <option value="BOS_CHANGE">BOS Change</option>
-        <option value="CHOCH_CHANGE">CHOCH Change</option>
+        <option value="PRICE_ABOVE">📈 Above</option>
+<option value="PRICE_BELOW">📉 Below</option>
+<option value="SUPPORT_TOUCH">🟢 Sup ON</option>
+<option value="RESISTANCE_TOUCH">🔴 Resist ON</option>
+<option value="BOS_CHANGE">⚡ BOS ON</option>
+<option value="CHOCH_CHANGE">🔄 CHOCH ON</option>
       </select>
 
       {(type === "PRICE_ABOVE" || type === "PRICE_BELOW") && (

@@ -211,7 +211,11 @@ const [mounted, setMounted] = useState(false);
 // 🔥 SWEEP ALERT (INI YANG BARU DAN BENAR)
 const [sweepAlert, setSweepAlert] = useState<any>(null);
 const lastSweepRef = useRef<number>(0);
- 
+const [mode, setMode] = useState<"SCALP" | "INTRADAY" | "SWING">("SCALP");
+
+const [prevPrice, setPrevPrice] = useState<number | null>(null);
+const [priceDirection, setPriceDirection] = useState<"UP" | "DOWN" | "FLAT">("FLAT");
+
  
  
 function startSound() {
@@ -331,6 +335,61 @@ function calculateBias(conf: { bullish: number; bearish: number }) {
   return "SIDEWAYS";
 }
 
+function getModeConfig(mode: string) {
+  switch (mode) {
+    case "SCALP":
+      return {
+        htf: "15m",
+        ltf: "5m",
+        sensitivity: 1,   // longgar
+        minScore: 2
+      };
+
+    case "INTRADAY":
+      return {
+        htf: "1h",
+        ltf: "15m",
+        sensitivity: 2,
+        minScore: 3
+      };
+
+    case "SWING":
+      return {
+        htf: "4h",
+        ltf: "1h",
+        sensitivity: 3,   // ketat
+        minScore: 4
+      };
+  }
+}
+
+function getConfidenceLevel(v: number) {
+  if (v >= 6) return "STRONG";
+  if (v >= 4) return "GOOD";
+  if (v >= 2) return "WEAK";
+  return "NONE";
+}
+
+function confidenceIcon(v: number) {
+  if (v >= 6) return "📈📈📈";
+  if (v >= 4) return "📈📈";
+  if (v >= 2) return "📈";
+  return "⚪";
+}
+
+function signalColor(direction: string | null) {
+  if (direction === "LONG") return "text-green-400";
+  if (direction === "SHORT") return "text-red-400";
+  return "text-zinc-400";
+}
+
+function signalBg(direction: string | null) {
+  if (direction === "LONG") return "bg-green-500/10 border-green-500/30";
+  if (direction === "SHORT") return "bg-red-500/10 border-red-500/30";
+  return "bg-white/5 border-white/10";
+}
+
+
 function generateSignalV2(
   price: number,
   support: number,
@@ -339,12 +398,15 @@ function generateSignalV2(
   choch: CHOCH,
   rsi: number,
   trend: string,
-  sweep: { type: string }   // 🔥 TAMBAH INI
+  sweep: any,
+  mode: "SCALP" | "INTRADAY" | "SWING"
 ){
   let score = 0;
   
+  const config = getModeConfig(mode);
+  
   if (sweep?.type === "BUY_SIDE_SWEEP") score -= 2;
-if (sweep?.type === "SELL_SIDE_SWEEP") score += 2;
+  if (sweep?.type === "SELL_SIDE_SWEEP") score += 2;
 
   if (bos === "BULLISH") score += 2;
   if (bos === "BEARISH") score -= 2;
@@ -359,34 +421,58 @@ if (sweep?.type === "SELL_SIDE_SWEEP") score += 2;
   if (trend === "BEARISH") score -= 1;
 
   // 🔥 FIX IMPORTANT: filter noise
-  if (Math.abs(score) < 2) return null;
+  
+
+const minScore = 1; // DEBUG MODE
 
   let direction: "LONG" | "SHORT" | "NONE" = "NONE";
 
   if (score > 0) direction = "LONG";
   if (score < 0) direction = "SHORT";
   
-  
+ 
 
+if (mode === "SCALP") score += 1;
+if (mode === "SWING") score -= 1;
+console.log({
+  mode,
+  bos,
+  choch,
+  rsi,
+  sweep: sweep?.type
+});
   const risk = Math.abs(resistance - support);
 
   return {
-    direction,
-    bias:
-  score >= 5 ? "STRONG_BULLISH" :
-  score >= 3 ? "BULLISH" :
-  score <= -5 ? "STRONG_BEARISH" :
-  score <= -3 ? "BEARISH" :
-  "SIDEWAYS",
+  direction,
 
-    confidence: Math.abs(score),
+  bias:
+    score >= 5 ? "STRONG_BULLISH" :
+    score >= 3 ? "BULLISH" :
+    score <= -5 ? "STRONG_BEARISH" :
+    score <= -3 ? "BEARISH" :
+    "SIDEWAYS",
 
-    entry: price,
-    sl: direction === "LONG" ? support : resistance,
-    tp1: direction === "LONG" ? price + risk : price - risk,
-    tp2: direction === "LONG" ? price + risk * 1.5 : price - risk * 1.5,
-    tp3: direction === "LONG" ? price + risk * 2 : price - risk * 2,
-  };
+  confidence: Math.abs(score),
+
+  score, // ✅ INI SUDAH BENAR
+
+  entry: price,
+
+  sl: direction === "LONG" ? support : resistance,
+
+  tp1: direction === "LONG"
+    ? price + risk
+    : price - risk,
+
+  tp2: direction === "LONG"
+    ? price + risk * 1.5
+    : price - risk * 1.5,
+
+  tp3: direction === "LONG"
+    ? price + risk * 2
+    : price - risk * 2,
+};
 }
 
  async function load(currentSymbol = symbol, currentTf = timeframe) {
@@ -399,6 +485,11 @@ if (sweep?.type === "SELL_SIDE_SWEEP") score += 2;
     );
 
     const data = await res.json();
+	// 🔥 IGNORE RESPONSE KALAU SYMBOL SUDAH BERUBAH
+if (currentSymbol !== symbol || currentTf !== timeframe) {
+  fetchLockRef.current = false;
+  return;
+}
 
     if (!Array.isArray(data) || data.length < 50) {
   fetchLockRef.current = false;
@@ -515,8 +606,12 @@ setChoch(structure.choch as "BULLISH" | "BEARISH" | "NONE");
   structure.choch,
   r,
   newTrend,
-  sweep   // 🔥 TAMBAH INI
+  sweep,
+  mode
 );
+console.log("MODE:", mode);
+console.log("SCORE:", plan?.score);
+console.log("SIGNAL:", plan?.direction);
 
 if (plan) {
   lastSignalRef.current = plan;
@@ -524,13 +619,9 @@ if (plan) {
   setBias(plan.bias);
   setConfidence(plan.confidence);
 } else {
-  if (lastSignalRef.current) {
-    setSignal(lastSignalRef.current);
-  } else {
-    setSignal(null);
-    setBias("SIDEWAYS");
-    setConfidence(0);
-  }
+  setSignal(null);
+  setBias("SIDEWAYS");
+  setConfidence(0);
 }
 
     const fcResult = forecast(r, structure.bos, structure.choch);
@@ -544,6 +635,8 @@ if (plan) {
     fetchLockRef.current = false;
   }
 }
+
+
 
 function generateTradePlan(price: number, support: number, resistance: number, bos: string) {
   let direction = "NONE";
@@ -823,10 +916,22 @@ function detectPattern(data: Candle[]) {
 
       if (!active) return;
 
-      setTicker((p: any) => ({
-        ...p,
-        price: +data.price,
-      }));
+      setTicker((p: any) => {
+  const newPrice = +data.price;
+
+  if (p.price) {
+    if (newPrice > p.price) setPriceDirection("UP");
+    else if (newPrice < p.price) setPriceDirection("DOWN");
+    else setPriceDirection("FLAT");
+  }
+
+  setPrevPrice(p.price);
+
+  return {
+    ...p,
+    price: newPrice,
+  };
+});
     } catch {}
   }, 1000);
 
@@ -853,14 +958,45 @@ useEffect(() => {
   fetchLockRef.current = false;
   lastCandleOpenRef.current = null;
 
+  // 🔥 RESET REF (INI YANG KAMU KURANG)
+  lastSignalRef.current = null;
+  lastSweepRef.current = 0;
+
+  // 🔥 RESET ALL UI STATE
   setCandles([]);
   setTicker({});
   setSignal(null);
   setBias("SIDEWAYS");
   setConfidence(0);
+  setSweepAlert(null);
 
+  setPattern({
+    name: "NONE",
+    strength: 0,
+    status: "WAITING",
+    target: 0,
+    neckline: 0,
+  });
+
+  setBos("SIDEWAYS");
+  setChoch("NONE");
+  setSupport(0);
+  setResistance(0);
+  setTrend("SIDEWAYS");
+  setRsi(50);
+  setFc({});
+
+  // 🔥 LOAD DATA BARU
   load();
+
 }, [symbol, timeframe]);
+
+function priceColor(direction: string) {
+  if (direction === "UP") return "text-green-400";
+  if (direction === "DOWN") return "text-red-400";
+  return "text-yellow-300";
+}
+
 
 function getLiquidityLevels(swings: Swing[]) {
   return {
@@ -968,7 +1104,8 @@ function resetAll(
   onClose={() => setActiveAlert(null)}
 />
 
-{/* TOP BAR */}
+
+
  <div className="rounded-1xl bg-white/5 border border-white/10 p-1">
 <div className="rounded-1xl flex items-center gap-3 p-1">
 <AlarmBar
@@ -1039,8 +1176,8 @@ function resetAll(
 
     {/* ADD BUTTON */}
   
-<div className="rounded-1xl bg-white/5 border border-white/10 p-1  text-xl font-bold ">
-        🚨 By Sikasep Ado
+<div className="rounded-xl bg-white/5 border border-white/10 p-1  text-l font-bold ">
+        🚨 Love By ado
       </div>
 
 
@@ -1050,51 +1187,13 @@ function resetAll(
 </div>
 
 
-	 {/*{activeAlert && (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-
-    <div className="w-[340px] rounded-2xl border border-red-500 bg-black p-6 text-center shadow-xl">
-
-      <div className="text-red-400 text-xl font-bold mb-3">
-        🚨 ALARM TRIGGERED
-      </div>
-
-      <div className="space-y-2 text-sm text-white">
-        <div><b>Symbol:</b> {activeAlert.symbol}</div>
-        <div><b>Type:</b> {activeAlert.type}</div>
-        <div className="text-yellow-400 text-lg">
-          {activeAlert.livePrice ?? ticker.price}
-        </div>
-      </div>
-
-      <button
-        onClick={() => {
-          setActiveAlert(null);
-          stopSound();
-        }}
-        className="mt-4 w-full bg-red-500 py-2 rounded hover:bg-red-600"
-      >
-        CLOSE ALERT
-      </button>
-
-    </div>
-  </div>
-	 )}*/}
+	 
 
   
   
     <div className="min-h-screen bg-gradient-to-br from-black via-slate-950 to-blue-950 text-white p-6">
 
-      {/* HEADER 
-      <div className="mb-8">
-        <h1 className="text-4xl font-extrabold bg-gradient-to-r from-yellow-300 via-cyan-400 to-purple-500 bg-clip-text text-transparent">
-          Crypto Dashboard
-        </h1>
-
-        <p className="text-zinc-400 mt-2">
-          Real-time Market Analysis & Forecast
-        </p>
-      </div>*/}
+      
 
       {/* CONTROL */}
       {sweepAlert && (
@@ -1113,9 +1212,9 @@ function resetAll(
 )}
 
       {/* TOP CARDS */}
-      <div className="grid grid-cols-2 md:grid-cols-8 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
 
-	  <div className="p-6 rounded-2xl bg-white/5 backdrop-blur-md border border-white/10">
+	  <div className="p-2 rounded-2xl bg-white/5 backdrop-blur-md border border-yellow-300">
 
   {/* Pair + TF */}
   <div className="grid grid-cols-2 gap-3 mb-8">
@@ -1149,24 +1248,44 @@ function resetAll(
     </select>
 
   </div>
-
+{/* TOP BAR */}
+<select
+  value={mode}
+  onChange={(e) => setMode(e.target.value as any)}
+  className="
+    w-full
+    h-11
+    px-4
+    bg-green-500/10
+    border border-white/10
+    rounded-xl
+    text-xl text-center
+    appearance-none
+    flex items-center justify-center
+  "
+>
+  <option value="SCALP">Scalping</option>
+  <option value="INTRADAY">Intraday</option>
+  <option value="SWING">Swing</option>
+</select>
 
   {/* Price */}
-  <div className="flex flex-col items-center">
+  <div className="p-5 flex flex-col items-center">
 
     <div className="text-xs uppercase tracking-widest text-zinc-500 mb-2">
-      Live Price
+     Live Price
     </div>
 
     <div
-      className={`
-        text-4xl font-black text-yellow-300 tracking-tight
-        transition-all duration-300
-        ${isReloading ? "animate-pulse" : ""}
-      `}
-    >
-      ${fmt(ticker.price)}
-    </div>
+  className={`
+    text-4xl font-black tracking-tight
+    transition-all duration-200
+    ${priceColor(priceDirection)}
+    ${priceDirection === "UP" ? "animate-pulse" : ""}
+  `}
+>
+  ${fmt(ticker.price)}
+</div>
 
   </div>
 
@@ -1174,10 +1293,10 @@ function resetAll(
   {/* Countdown */}
   <div className="mt-8">
 
-    <div className="bg-black/30 border border-white/10 rounded-xl p-4 text-center">
+    <div className=" rounded-xl p-2 text-center">
 
       <div className="text-xs uppercase tracking-wider text-zinc-500 mb-2">
-        ⏳ Candle Closes In
+        ⏳ Closes In
       </div>
 
       <div className="text-2xl font-bold text-cyan-400">
@@ -1199,46 +1318,81 @@ function resetAll(
         </div>
 	<>
   {signal ? (
-    <div className="rounded-3xl bg-white/5 backdrop-blur-md border border-white/10 p-6">
-      <div className="flex items-center justify-between">
-        <div
-          className={`text-xl font-bold flex items-center gap-2 ${
-            signal.direction === "LONG" ? "text-green-400" : "text-red-400"
-          }`}
-        >
-          {signal.direction}
-        </div>
+    <div
+  className={`
+    rounded-3xl backdrop-blur-md border p-6 transition-all
+    ${signalBg(signal.direction)}
+  `}
+>
+  {/* HEADER FIXED */}
+<div className="flex flex-col gap-2 mb-4">
 
-        <AlertTriangle
-          className={`w-5 h-5 ${
-            signal.direction === "LONG" ? "text-green-400" : "text-red-400"
-          }`}
-        />
+  {/* ROW 1: MODE + CONFIDENCE */}
+  <div className="flex items-center justify-between">
+
+    <div className="text-xs px-3 py-1 rounded-full bg-cyan-500/20 border border-cyan-400 text-cyan-300">
+      {mode}
+    </div>
+
+    <div className="p-1 text-CENTER">
+            <div className="text-sm text-center font-bold">
+        {confidenceIcon(signal.confidence)} {signal.confidence}
       </div>
+      <div className="text-xs text-zinc-500">
+        {getConfidenceLevel(signal.confidence)}
+      </div>
+    </div>
 
-      <div className="grid grid-cols-2 gap-3 mt-4 text-sm">
-  <div className="text-zinc-400">Entry</div>
-  <div className="text-white text-right">{fmt(signal.entry)}</div>
+  </div>
 
-  <div className="text-zinc-400">SL</div>
-  <div className="text-red-400 transition-all text-right">{fmt(signal.sl)}</div>
+  {/* ROW 2: SIGNAL CENTER */}
+  <div className="flex items-center justify-center">
+    <div className={`text-2xl font-black tracking-wide ${signalColor(signal.direction)}`}>
+      {signal.direction}
+    </div>
+  </div>
 
-  <div className="text-zinc-400">TP1</div>
-  <div className="text-green-400 text-right">{fmt(signal.tp1)}</div>
-
-  <div className="text-zinc-400">TP2</div>
-  <div className="text-green-400 text-right">{fmt(signal.tp2)}</div>
-
-  <div className="text-zinc-400">TP3</div>
-  <div className="text-green-400 text-right">{fmt(signal.tp3)}</div>
-  
-  <div className="text-zinc-400">Confidence</div>
-<div className="text-white text-right">{signal?.confidence}</div>
-
-<div className="text-zinc-400">Bias</div>
-<div className="text-white text-right">{signal?.bias}</div>
-  
 </div>
+
+  {/* NO TRADE ZONE WARNING */}
+  {signal.confidence <= 1 && (
+    <div className="text-center mb-4 p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 text-sm">
+      ⚠ NO TRADE ZONE
+    </div>
+  )}
+
+  {/* BODY */}
+  <div className="grid grid-cols-2 gap-3 text-sm">
+
+    <div className="text-zinc-400">Entry</div>
+    <div className="text-white text-right">{fmt(signal.entry)}</div>
+
+    <div className="text-zinc-400">SL</div>
+<div className="text-red-400 text-right animate-blink drop-shadow-[0_0_6px_rgba(239,68,68,0.8)]">
+  {fmt(signal.sl)}
+</div>
+
+    <div className="text-zinc-400">TP1</div>
+    <div className="text-green-400 text-right">{fmt(signal.tp1)}</div>
+
+    <div className="text-zinc-400">TP2</div>
+    <div className="text-green-400 text-right">{fmt(signal.tp2)}</div>
+
+    <div className="text-zinc-400">TP3</div>
+    <div className="text-green-400 text-right">{fmt(signal.tp3)}</div>
+
+    <div className="text-zinc-400">Bias</div>
+    <div className="text-right">{signal.bias}</div>
+
+  </div>
+
+  {/* FOOTER SENSITIVITY */}
+  <div className="text-center mt-4 text-xs text-zinc-400 border-t border-white/10 pt-3">
+        {mode === "SCALP" && " HIGH (fast, noisy, fast entry)"}
+    {mode === "INTRADAY" && " MEDIUM (balanced confirmation)"}
+    {mode === "SWING" && " LOW (strict, high quality only)"}
+  </div>
+
     </div>
   ) : (
     <div className="rounded-3xl bg-white/5 backdrop-blur-md border border-white/10 p-6 text-center flex items-center justify-center gap-2 text-zinc-400 animate-pulse">
@@ -1250,91 +1404,81 @@ function resetAll(
 		
 
         {/* OHLC */}
-  <div className="rounded-3xl bg-white/5 backdrop-blur-md border border-white/10 p-6">
+  <div className="rounded-3xl bg-white/5 backdrop-blur-md border border-white/10 p-6 space-y-6">
 
-    <div className="text-zinc-400  mb-5">
-      📈 OHLC
+ 
+
+  {/* GRID WRAPPER (2 CARD SECTION) */}
+  <div className="grid grid-cols-1 gap-4">
+
+    {/* ================= OHLC ================= */}
+   
+      <div className="text-zinc-400 mb-4 text-sm">📊 OHLC</div>
+
+      <div className="grid grid-cols-2 gap-3 text-center">
+
+        <div>
+          <div className="text-zinc-500 text-xs">OPEN</div>
+          <div className="text-lg font-bold">{fmt(ticker.open)}</div>
+        </div>
+
+        <div>
+          <div className="text-zinc-500 text-xs">HIGH</div>
+          <div className="text-lg font-bold text-green-400">
+            {fmt(ticker.high)}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-zinc-500 text-xs">LOW</div>
+          <div className="text-lg font-bold text-red-400">
+            {fmt(ticker.low)}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-zinc-500 text-xs">CLOSE</div>
+          <div className="text-lg font-bold text-yellow-300">
+            {fmt(ticker.price)}
+          </div>
+        </div>
+
+      
     </div>
 
-    <div className="p-1 grid grid-cols-1 gap-2 text-center">
+    {/* ================= SR ================= */}
+   
+      
 
-      <div>
-        <div className="text-zinc-500 text-sm">OPEN</div>
-        <div className="text-xl font-bold">
-          {fmt(ticker.open)}
+      <div className="p-2 grid grid-cols-1 gap- text-center">
+
+        <div>
+          <div className="p-2 text-zinc-500 text-xs">RESISTANCE</div>
+          <div className="text-3xl font-bold text-red-400">
+            {fmt(resistance)}
+          </div>
         </div>
-      </div>
 
-      <div>
-        <div className="text-zinc-500 text-sm">HIGH</div>
-        <div className="text-xl font-bold text-green-400">
-          {fmt(ticker.high)}
+        <div>
+          <div className="p-2 text-zinc-500 text-xs">SUPPORT</div>
+          <div className="text-3xl font-bold text-green-400">
+            {fmt(support)}
+          </div>
         </div>
+
       </div>
-
-      <div>
-        <div className="text-zinc-500 text-sm">LOW</div>
-        <div className="text-xl font-bold text-red-400">
-          {fmt(ticker.low)}
-        </div>
-      </div>
-
-      <div>
-        <div className="text-zinc-500 text-sm">CLOSE</div>
-        <div className="text-xl font-bold text-yellow-300">
-          {fmt(ticker.price)}
-        </div>
-      </div>
-
-    </div>
-
-       
-        
-        </div>
-		<div className="rounded-3xl bg-white/5 border border-white/10 p-6">
-
-  <div className="text-zinc-400 mb-5">
-   📈 SR
-  </div>
-
-  <div className="space-y-6 text-center">
-
-    <div>
-      <div className="p-2 text-sm text-zinc-500">
-        Resistance
-      </div>
-
-      <div className="text-4xl font-bold text-red-400">
-        {fmt(resistance)}
-      </div>
-    </div>
-
-    <div>
-      <div className="p-2 text-sm text-zinc-500">
-        Support
-      </div>
-
-      <div className="text-4xl font-bold text-green-400">
-        {fmt(support)}
-      </div>
-    </div>
-
-
-
+    
 
   </div>
-
 </div>
-
 
 
 
 <div className="rounded-3xl bg-white/5 border border-white/10 p-6">
   
-  <div className="space-y-4">
- 📊 <span>Structure</span>
+
   {/* BOS */}
-  <div className=" p-6 flex flex-col items-center">
+  <div className=" p-4 flex flex-col items-center">
     <div className="flex items-center gap-2 text-zinc-400 text-sm uppercase tracking-wider mb-3">
       {bos === "BULLISH" ? (
         <TrendingUp size={18} className="text-green-400" />
@@ -1345,7 +1489,7 @@ function resetAll(
     </div>
 
     <div
-      className={`text-3xl font-bold ${
+      className={`text-2xl font-bold ${
         bos === "BULLISH"
           ? "text-green-400"
           : bos === "BEARISH"
@@ -1358,14 +1502,14 @@ function resetAll(
   </div>
 
   {/* CHOCH */}
-  <div className=" p-6 flex flex-col items-center">
+  <div className=" p-1 flex flex-col items-center">
     <div className="flex items-center gap-2 text-zinc-400 text-sm uppercase tracking-wider mb-3">
       <GitBranch size={18} className="text-yellow-400" />
       <span>CHOCH</span>
     </div>
 
     <div
-      className={`text-3xl font-bold ${
+      className={`text-2xl font-bold ${
         choch === "BULLISH"
           ? "text-green-400"
           : choch === "BEARISH"
@@ -1375,35 +1519,20 @@ function resetAll(
     >
       {choch}
     </div>
-
-
-</div>
-
-</div>
-</div>
-{/* MARKET INFO */}
-  <div className="rounded-3xl bg-white/5 backdrop-blur-md border border-white/10 p-6">
-
-    <div className="text-zinc-400  mb-5 flex items-center gap-2">
-  📊 <span>Market Info</span>
-</div>
-
-<div className="space-y-4">
-
-  {/* RSI */}
-  <div className=" p-5 flex flex-col items-center">
+{/* RSI */}
+  <div className=" p-2 flex flex-col items-center">
     <div className="flex items-center gap-2 text-zinc-500 text-sm uppercase tracking-wider mb-2">
       <Activity size={16} className="text-cyan-400" />
       <span>RSI</span>
     </div>
 
-    <div className="text-3xl font-bold text-cyan-400">
+    <div className="text-2xl font-bold text-cyan-400">
       {fmt(rsi)}
     </div>
   </div>
 
   {/* Trend */}
-  <div className=" p-5 flex flex-col items-center">
+  <div className=" p-1 flex flex-col items-center">
     <div className="flex items-center gap-2 text-zinc-500 text-sm uppercase tracking-wider mb-2">
 
       {trend === "UPTREND" ? (
@@ -1418,7 +1547,7 @@ function resetAll(
     </div>
 
     <div
-      className={`text-3xl font-bold ${
+      className={`text-2xl font-bold ${
         trend === "UPTREND"
           ? "text-green-400"
           : trend === "DOWNTREND"
@@ -1430,10 +1559,11 @@ function resetAll(
     </div>
   </div>
 
+
+
 </div>
-	
-	
-      </div>
+</div>
+
 	  <div className="rounded-3xl bg-white/5 border border-white/10 p-6">
 
     <div className="text-zinc-400 mb-5">
@@ -1445,7 +1575,7 @@ function resetAll(
     <div>
       
 
-      <div className="text-l font-bold text-yellow-300">
+      <div className="text-2xl font-bold text-yellow-300">
         {pattern.name.replaceAll("_"," ")}
       </div>
     </div>
@@ -1558,23 +1688,13 @@ function resetAll(
 
 
 
-
 </div>
-
 
 
 	  {/* MARKET INFO + OHLC */}
 <div className="grid md:grid-cols-2 gap-4 mb-6">
 
-  
-
-  </div>
-
- 
-
-  
-
-
+    </div>
 
   </div>
 

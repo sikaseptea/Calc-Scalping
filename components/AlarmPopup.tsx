@@ -11,7 +11,7 @@ export default function AlarmPopup({
       <div className="w-[360px] rounded-2xl border border-red-500 bg-black p-6 text-center">
 
         <div className="text-red-400 text-xl font-bold mb-3">
-          🚨 ALARM TRIGGERED
+          🚨 Price ON
         </div>
 
         <div className="space-y-2 text-sm">
@@ -33,7 +33,7 @@ export default function AlarmPopup({
   </div>
 
   <div>
-    Triggered At:
+    Triggered At: 
     {alert.triggeredAt
       ? new Date(alert.triggeredAt).toLocaleTimeString()
       : "-"}
@@ -48,7 +48,7 @@ export default function AlarmPopup({
           }}
           className="mt-4 w-full bg-red-500 py-2 rounded"
         >
-          CLOSE & STOP
+          Clear
         </button>
       </div>
     </div>

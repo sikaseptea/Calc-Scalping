@@ -8,17 +8,21 @@ export type AlarmType =
   | "BOS_CHANGE"
   | "CHOCH_CHANGE";
 
+export type AlarmStatus = "ACTIVE" | "TRIGGERED" | "ACKED";
+
 export type Alarm = {
   id: string;
   symbol: string;
   type: AlarmType;
   price?: number;
-  active: boolean;
-  acknowledged?: boolean;
+
+  status: AlarmStatus;
+
   triggeredAt?: number;
+  acknowledgedAt?: number;
 };
 
-const STORAGE_KEY = "terminal_alarms_v1";
+const STORAGE_KEY = "terminal_alarms_v2";
 
 export function useAlarmSystem(
   livePrice: number,
@@ -31,55 +35,58 @@ export function useAlarmSystem(
   },
   onTrigger?: (alarm: Alarm & { livePrice: number }) => void
 ) {
-
   const [alarms, setAlarms] = useState<Alarm[]>([]);
-  const lastRef = useRef<{
-    bos?: string;
-    choch?: string;
-  }>({});
 
   // =========================
-  // LOAD STORAGE
+  // PER SYMBOL STATE TRACKING
+  // =========================
+  const lastRef = useRef<
+    Record<string, { bos?: string; choch?: string }>
+  >({});
+
+  const prevPriceRef = useRef<Record<string, number | null>>({});
+
+  // =========================
+  // LOAD
   // =========================
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-
-      if (raw) {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      try {
         setAlarms(JSON.parse(raw));
+      } catch (e) {
+        console.error("Alarm load error:", e);
       }
-    } catch (err) {
-      console.error(err);
     }
   }, []);
 
   // =========================
-  // SAVE STORAGE
+  // SAVE
   // =========================
   useEffect(() => {
     if (typeof window === "undefined") return;
-
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify(alarms)
-    );
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(alarms));
   }, [alarms]);
+
+  // =========================
+  // RESET PRICE TRACK ON SYMBOL SWITCH
+  // =========================
+  useEffect(() => {
+    prevPriceRef.current[symbol] = null;
+  }, [symbol]);
 
   // =========================
   // ADD ALARM
   // =========================
-  function addAlarm(
-    data: Omit<Alarm, "id" | "active">
-  ) {
+  function addAlarm(data: Omit<Alarm, "id" | "status">) {
     setAlarms((prev) => [
       ...prev,
       {
         ...data,
         id: crypto.randomUUID(),
-        active: true,
-        acknowledged: false,
+        status: "ACTIVE",
       },
     ]);
   }
@@ -93,8 +100,8 @@ export function useAlarmSystem(
         a.id === id
           ? {
               ...a,
-              active: false,
-              acknowledged: true,
+              status: "ACKED",
+              acknowledgedAt: Date.now(),
             }
           : a
       )
@@ -102,12 +109,10 @@ export function useAlarmSystem(
   }
 
   // =========================
-  // DELETE ONE
+  // REMOVE
   // =========================
   function removeAlarm(id: string) {
-    setAlarms((prev) =>
-      prev.filter((a) => a.id !== id)
-    );
+    setAlarms((prev) => prev.filter((a) => a.id !== id));
   }
 
   // =========================
@@ -115,112 +120,96 @@ export function useAlarmSystem(
   // =========================
   function clearAllAlarms() {
     setAlarms([]);
-
     if (typeof window !== "undefined") {
       localStorage.removeItem(STORAGE_KEY);
     }
   }
 
   // =========================
-  // CHECK TRIGGER
+  // ENGINE (PRODUCTION SAFE)
   // =========================
   useEffect(() => {
+    if (livePrice == null || !symbol) return;
 
-    if (livePrice == null) return;
-
-    let changed = false;
+    const last = lastRef.current[symbol] ?? {};
+    const prevPrice = prevPriceRef.current[symbol];
 
     setAlarms((prev) => {
+      let changed = false;
 
       const updated = prev.map((alarm) => {
-
-        // pair berbeda → skip
-        if (alarm.symbol !== symbol) {
-          return alarm;
-        }
-
-        // sudah mati → skip
-        if (!alarm.active || alarm.acknowledged) {
-          return alarm;
-        }
+        if (alarm.symbol !== symbol) return alarm;
+        if (alarm.status !== "ACTIVE") return alarm;
 
         let triggered = false;
 
-        // PRICE ABOVE
-        if (
-          alarm.type === "PRICE_ABOVE" &&
-          typeof alarm.price === "number"
-        ) {
-
+        // =========================
+        // PRICE ABOVE (EDGE)
+        // =========================
+        if (alarm.type === "PRICE_ABOVE" && alarm.price != null) {
           triggered =
-            Number(livePrice.toFixed(2)) >=
-            Number(alarm.price.toFixed(2));
+            prevPrice != null &&
+            prevPrice < alarm.price &&
+            livePrice >= alarm.price;
         }
 
-        // PRICE BELOW
-        if (
-          alarm.type === "PRICE_BELOW" &&
-          typeof alarm.price === "number"
-        ) {
-
+        // =========================
+        // PRICE BELOW (EDGE)
+        // =========================
+        if (alarm.type === "PRICE_BELOW" && alarm.price != null) {
           triggered =
-            Number(livePrice.toFixed(2)) <=
-            Number(alarm.price.toFixed(2));
+            prevPrice != null &&
+            prevPrice > alarm.price &&
+            livePrice <= alarm.price;
         }
 
+        // =========================
         // SUPPORT
+        // =========================
         if (
           alarm.type === "SUPPORT_TOUCH" &&
-          typeof context.support === "number"
+          context.support != null
         ) {
-
-          triggered =
-            livePrice <= context.support;
+          triggered = livePrice <= context.support;
         }
 
+        // =========================
         // RESISTANCE
+        // =========================
         if (
           alarm.type === "RESISTANCE_TOUCH" &&
-          typeof context.resistance === "number"
+          context.resistance != null
         ) {
-
-          triggered =
-            livePrice >= context.resistance;
+          triggered = livePrice >= context.resistance;
         }
 
+        // =========================
         // BOS
+        // =========================
         if (alarm.type === "BOS_CHANGE") {
-
-          const prevBos = lastRef.current.bos;
-          const currentBos = context.bos;
-
           triggered =
-            !!prevBos &&
-            !!currentBos &&
-            prevBos !== currentBos;
+            !!last.bos &&
+            !!context.bos &&
+            last.bos !== context.bos;
         }
 
+        // =========================
         // CHOCH
+        // =========================
         if (alarm.type === "CHOCH_CHANGE") {
-
-          const prevChoch = lastRef.current.choch;
-          const currentChoch = context.choch;
-
           triggered =
-            !!prevChoch &&
-            !!currentChoch &&
-            prevChoch !== currentChoch;
+            !!last.choch &&
+            !!context.choch &&
+            last.choch !== context.choch;
         }
 
-        if (!triggered) {
-          return alarm;
-        }
+        if (!triggered) return alarm;
 
         changed = true;
 
         const updatedAlarm: Alarm = {
           ...alarm,
-          active: false,
+          status: "TRIGGERED",
           triggeredAt: Date.now(),
         };
 
@@ -235,11 +224,15 @@ export function useAlarmSystem(
       return changed ? updated : prev;
     });
 
-    lastRef.current = {
+    // =========================
+    // UPDATE TRACKERS
+    // =========================
+    lastRef.current[symbol] = {
       bos: context.bos,
       choch: context.choch,
     };
 
+    prevPriceRef.current[symbol] = livePrice;
   }, [
     livePrice,
     symbol,
