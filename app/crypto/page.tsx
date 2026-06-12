@@ -5,7 +5,8 @@ import Chart, { Candle as ChartCandle } from "./components/chart/Chart";
 import {TrendingUp, TrendingDown, Shuffle, GitBranch,Activity,Minus,Clock3,
   AlertTriangle,
   Plus,
-  Trash2
+  Trash2,
+  Calculator
 } from "lucide-react";
 import AlarmBar from "@/components/AlarmBar";
 
@@ -215,7 +216,7 @@ const [mode, setMode] = useState<"SCALP" | "INTRADAY" | "SWING">("SCALP");
 
 const [prevPrice, setPrevPrice] = useState<number | null>(null);
 const [priceDirection, setPriceDirection] = useState<"UP" | "DOWN" | "FLAT">("FLAT");
-
+const [webPopup, setWebPopup] = useState<null | string>(null);
  
  
 function startSound() {
@@ -1217,13 +1218,13 @@ function resetAll(
 	  <div className="p-2 rounded-2xl bg-white/5 backdrop-blur-md border border-yellow-300">
 
   {/* Pair + TF */}
-  <div className="grid grid-cols-2 gap-3 mb-8">
+  <div className="mt-4 grid grid-cols-2 gap-3 mb-8">
 
     <select
       value={symbol}
       onChange={(e) => setSymbol(e.target.value)}
       className="
-        bg-black/40 border border-white/10 rounded-xl
+        bg-yellow-300/40 border border-white/10 rounded-xl
         p-3 text-center text-sm
         hover:border-cyan-500/40 transition-all
       "
@@ -1257,7 +1258,7 @@ function resetAll(
     h-11
     px-4
     bg-green-500/10
-    border border-white/10
+    border border-yellow-300
     rounded-xl
     text-xl text-center
     appearance-none
@@ -1268,7 +1269,7 @@ function resetAll(
   <option value="INTRADAY">Intraday</option>
   <option value="SWING">Swing</option>
 </select>
-
+<div className="w-full border-t border-yellow-400 my-8" />
   {/* Price */}
   <div className="p-5 flex flex-col items-center">
 
@@ -1387,7 +1388,7 @@ function resetAll(
   </div>
 
   {/* FOOTER SENSITIVITY */}
-  <div className="text-center mt-4 text-xs text-zinc-400 border-t border-white/10 pt-3">
+  <div className="text-center mt-2 p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 text-sm">
         {mode === "SCALP" && " HIGH (fast, noisy, fast entry)"}
     {mode === "INTRADAY" && " MEDIUM (balanced confirmation)"}
     {mode === "SWING" && " LOW (strict, high quality only)"}
@@ -1409,13 +1410,13 @@ function resetAll(
  
 
   {/* GRID WRAPPER (2 CARD SECTION) */}
-  <div className="grid grid-cols-1 gap-4">
+  <div className="mt-2 grid grid-cols-1 gap-4">
 
     {/* ================= OHLC ================= */}
    
       <div className="text-zinc-400 mb-4 text-sm">📊 OHLC</div>
 
-      <div className="grid grid-cols-2 gap-3 text-center">
+      <div className="mt-5 grid grid-cols-2 gap-3 text-center">
 
         <div>
           <div className="text-zinc-500 text-xs">OPEN</div>
@@ -1448,12 +1449,12 @@ function resetAll(
 
     {/* ================= SR ================= */}
    
-      
+     <div className="w-full border-t border-yellow-400 my-4" />
 
-      <div className="p-2 grid grid-cols-1 gap- text-center">
+      <div className=" grid grid-cols-1 gap- text-center">
 
         <div>
-          <div className="p-2 text-zinc-500 text-xs">RESISTANCE</div>
+          <div className="p-1 text-zinc-500 text-xs">RESISTANCE</div>
           <div className="text-3xl font-bold text-red-400">
             {fmt(resistance)}
           </div>
@@ -1478,7 +1479,7 @@ function resetAll(
   
 
   {/* BOS */}
-  <div className=" p-4 flex flex-col items-center">
+  <div className=" p-1 flex flex-col items-center">
     <div className="flex items-center gap-2 text-zinc-400 text-sm uppercase tracking-wider mb-3">
       {bos === "BULLISH" ? (
         <TrendingUp size={18} className="text-green-400" />
@@ -1500,9 +1501,10 @@ function resetAll(
       {bos}
     </div>
   </div>
+<div className="w-full border-t border-yellow-400 my-4" />
 
   {/* CHOCH */}
-  <div className=" p-1 flex flex-col items-center">
+  <div className="  p-1 flex flex-col items-center ">
     <div className="flex items-center gap-2 text-zinc-400 text-sm uppercase tracking-wider mb-3">
       <GitBranch size={18} className="text-yellow-400" />
       <span>CHOCH</span>
@@ -1519,8 +1521,9 @@ function resetAll(
     >
       {choch}
     </div>
+<div className="w-full border-t border-yellow-400 my-4" />
 {/* RSI */}
-  <div className=" p-2 flex flex-col items-center">
+  <div className=" p-1 flex flex-col items-center">
     <div className="flex items-center gap-2 text-zinc-500 text-sm uppercase tracking-wider mb-2">
       <Activity size={16} className="text-cyan-400" />
       <span>RSI</span>
@@ -1530,7 +1533,7 @@ function resetAll(
       {fmt(rsi)}
     </div>
   </div>
-
+<div className="w-full border-t border-yellow-400 my-4" />
   {/* Trend */}
   <div className=" p-1 flex flex-col items-center">
     <div className="flex items-center gap-2 text-zinc-500 text-sm uppercase tracking-wider mb-2">
@@ -1579,7 +1582,7 @@ function resetAll(
         {pattern.name.replaceAll("_"," ")}
       </div>
     </div>
-
+<div className="w-full border-t border-yellow-400 my-2" />
     <div>
       <div className="text-zinc-500 text-sm">
         Strength
@@ -1589,7 +1592,7 @@ function resetAll(
         {pattern.strength}%
       </div>
     </div>
-
+<div className="w-full border-t border-yellow-400 my-2" />
     <div>
       <div className="text-zinc-500 text-sm">
         Status
@@ -1601,21 +1604,27 @@ function resetAll(
       }>
         {pattern.status}
       </div>
-      
+      <div className="w-full border-t border-yellow-400 my-2" />
     </div>
 
     <div>
       <div className="text-zinc-500 text-sm">
-        Neckline | Target
+        Neckline
       </div>
 
       <div>
-        {fmt(pattern.neckline)} | {fmt(pattern.target)}
+        {fmt(pattern.neckline)}
       </div>
     </div>
-
+<div className="w-full border-t border-yellow-400 my-2" />
     <div>
-      
+      <div className="text-zinc-500 text-sm">
+       Target
+      </div>
+
+      <div>
+        {fmt(pattern.target)}
+      </div>
     </div>
 
   </div>
@@ -1685,16 +1694,29 @@ function resetAll(
       {fc?.["1M"] ?? "-"}
     </div>
   </div>
-
+{/* BUTTON POPUP */}
 
 
 </div>
-
-
+<div className="w-full border-t border-yellow-400 my-2" />
+<div className="p-2 flex items-center gap-3  text-zinc-400 uppercase mt-6 justify-center">
+  <button
+  onClick={() => setWebPopup("http://localhost:3000/calculator")}
+  className="
+    mt-3 px-3 py-1 text-2xl
+    bg-green-500/20 border border-green-400
+    text-green-300 rounded-lg hover:bg-green-500/30
+    flex items-center gap-2
+  "
+>
+  <Calculator size={18} />
+  Calculator
+</button>
+</div>
 	  {/* MARKET INFO + OHLC */}
-<div className="grid md:grid-cols-2 gap-4 mb-6">
 
-    </div>
+
+    
 
   </div>
 
@@ -1716,6 +1738,30 @@ function resetAll(
       
 
     </div>
+	
+	{webPopup && (
+  <div className="fixed inset-0 z-50 bg-black/10 flex items-center justify-end">
+    
+    <div className=" right-2 w-[65%] h-[90%] bg-black border border-purple/10 rounded-2xl overflow-hidden relative">
+
+      {/* CLOSE BUTTON */}
+      <button
+        onClick={() => setWebPopup(null)}
+        className="absolute top-2 right-2 z-50 bg-red-500/20 text-red-300 px-3 py-1 rounded-lg"
+      >
+        Close
+      </button>
+
+      {/* IFRAME */}
+      <iframe
+        src={webPopup}
+        className="w-full h-full"
+      />
+    </div>
+
+  </div>
+)}
+	
 	</>
   );
   

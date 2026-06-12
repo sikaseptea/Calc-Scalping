@@ -1,497 +1,260 @@
 "use client";
+import React, { useState, useEffect, useRef } from 'react';
+import { Zap, Save, LogOut, CheckCircle2, AlertTriangle, TrendingUp, ShieldCheck, PieChart, Activity, LayoutGrid, UserCircle } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
 
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+// 1. Inisialisasi Supabase
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
-const MEMBERS = [
-  { name: "REGULAR", fee: 0.0004 },
-  { name: "VIP 1", fee: 0.0003 },
-  { name: "VIP 2", fee: 0.0002 },
-];
+const TOP_15_PAIRS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'ADAUSDT', 'AVAXUSDT', 'DOGEUSDT', 'DOTUSDT', 'TRXUSDT', 'LINKUSDT', 'MATICUSDT', 'SHIBUSDT', 'LTCUSDT', 'BCHUSDT'];
 
-// ================= TP BAR =================
-type TPBarProps = {
-  label: string;
-  value: number;
-  percent: number;
-  color: string;
-};
-
-function TPBar({
-  label,
-  value,
-  percent,
-  color,
-}: TPBarProps) {
-  const p = Math.max(0, Math.min(percent || 0, 100));
-  if (p <= 0) return null;
-
-  return (
-    <div className="bg-zinc-900/80 backdrop-blur-xl border border-zinc-800 rounded-2xl p-4">
-      <div className="flex justify-between text-xs text-zinc-400 mb-2">
-        <span>{label}</span>
-        <span>{p}%</span>
-      </div>
-
-      <div className="w-full h-3 bg-zinc-800 rounded-full overflow-hidden">
-        <div
-          className={`${color} h-3 rounded-full transition-all duration-500`}
-          style={{ width: `${p}%` }}
-        />
-      </div>
-
-      <div className="mt-3 text-lg font-bold">
-        {Number.isFinite(value) ? value.toFixed(4) : "-"}
-      </div>
-    </div>
-  );
-}
-
-function StatCard({
-  title,
-  value,
-}: {
-  title: string;
-  value: string;
-}) {
-  return (
-    <div
-      className="
-      bg-zinc-900/80
-      border border-zinc-800
-      rounded-2xl
-      p-5
-      backdrop-blur
-      hover:border-yellow-200/90 
-      transition
-    "
-    >
-      <div className="text-xs text-zinc-500">
-        {title}
-      </div>
-
-      <div className="mt-2 text-2xl font-bold">
-        {value}
-      </div>
-    </div>
-  );
-}
-
-// ================= TOAST =================
-function Toast({ show, text }: { show: boolean; text: string }) {
-  if (!show) return null;
-
-  return (
-    <div className="fixed top-5 right-5 z-50">
-      <div className="bg-green-600 text-white px-4 py-2 rounded shadow-lg">
-        {text}
-      </div>
-    </div>
-  );
-}
-
-// ================= NORMALIZER =================
-function normalizePair(input: string, list: string[]) {
-  const raw = input.toUpperCase().replace(/[^A-Z]/g, "");
-  if (!raw) return "";
-
-  if (raw.endsWith("USDT")) return raw;
-
-  const match = list.find((p) => p.startsWith(raw));
-  return match || "";
-}
-
-export default function CalculatorPage() {
-  const [pairs, setPairs] = useState<string[]>([]);
-  const [pairInput, setPairInput] = useState(""); // ✅ DEFAULT KOSONG
-  const [pair, setPair] = useState("BTCUSDT");
-
-  const [price, setPrice] = useState(0);
-  const [paused, setPaused] = useState(false);
-
-  const [balance, setBalance] = useState(1000);
-  const [riskPercent, setRiskPercent] = useState(1);
-  const [rr, setRR] = useState(2);
-  const [leverage, setLeverage] = useState(10);
-
-  const [member, setMember] = useState(MEMBERS[0]);
-
-  const [entry, setEntry] = useState(0);
-  const [entryMode, setEntryMode] = useState<"AUTO" | "MANUAL">("AUTO");
-
-  const [direction, setDirection] = useState<"LONG" | "SHORT">("LONG");
-
-  const [tp1Split, setTp1Split] = useState(0);
-  const [tp2Split, setTp2Split] = useState(0);
-  const [tp3Split, setTp3Split] = useState(0);
-
+export default function TradingTerminalProV8() {
+  // --- SYSTEM STATES ---
+  const [mode, setMode] = useState('AUTO'); 
+  const [side, setSide] = useState('LONG');
+  const [pair, setPair] = useState('BTCUSDT');
+  const [member, setMember] = useState('REGULAR');
+  const [livePrice, setLivePrice] = useState(0);
+  const [priceColor, setPriceColor] = useState('text-white');
   const [toast, setToast] = useState(false);
+  const prevPrice = useRef(0);
 
-  const splitTotal = tp1Split + tp2Split + tp3Split;
-  const splitValid = splitTotal === 100;
+  // --- INPUT STATES ---
+  const [entryPrice, setEntryPrice] = useState(0);
+  const [modal, setModal] = useState(1000);
+  const [riskPct, setRiskPct] = useState(1);
+  const [leverage, setLeverage] = useState(20);
+  const [rrRatio, setRrRatio] = useState(2);
+  const [slType, setSlType] = useState('REALISTIC');
+  const [slippage, setSlippage] = useState(0.05);
+  const [tpVol, setTpVol] = useState({ tp1: 50, tp2: 30, tp3: 20 });
 
-  // ================= LOAD PAIRS =================
+  // --- RESULTS STATE ---
+  const [results, setResults] = useState({
+    sl: 0, slPct: 0, tp1: 0, tp2: 0, tp3: 0,
+    size: 0, margin: 0, riskAmt: 0, gross: 0, fee: 0, slipAmt: 0, net: 0, roi: 0, 
+    kelly: 0, totalPotentialLoss: 0
+  });
+
+  // WebSocket Live Price Binance
   useEffect(() => {
-    fetch("https://api.binance.com/api/v3/exchangeInfo")
-      .then((r) => r.json())
-      .then((d) => {
-        const usdt = d.symbols
-          .filter((s: any) => s.quoteAsset === "USDT" && s.status === "TRADING")
-          .map((s: any) => s.symbol);
-
-        setPairs(usdt);
-      });
-  }, []);
-
-  // ================= NORMALIZE =================
-  useEffect(() => {
-    const fixed = normalizePair(pairInput, pairs);
-    if (fixed) setPair(fixed);
-  }, [pairInput, pairs]);
-
-  // ================= RESET ENTRY ON PAIR CHANGE =================
-  useEffect(() => {
-    setEntryMode("AUTO");
-    setEntry(0);
-  }, [pair]);
-
-  // ================= LIVE PRICE =================
-  useEffect(() => {
-    if (paused || !pair) return;
-
-    const ws = new WebSocket(
-      `wss://stream.binance.com:9443/ws/${pair.toLowerCase()}@ticker`
-    );
-
-    ws.onmessage = (e) => {
-      const d = JSON.parse(e.data);
-      const p = parseFloat(d.c);
-      if (!isNaN(p)) setPrice(p);
+    const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${pair.toLowerCase()}@ticker`);
+    ws.onmessage = (event) => {
+      const ticker = JSON.parse(event.data);
+      const current = parseFloat(ticker.c);
+      if (current > prevPrice.current) setPriceColor('text-green-500 font-bold');
+      else if (current < prevPrice.current) setPriceColor('text-red-500 font-bold');
+      setLivePrice(current);
+      prevPrice.current = current;
+      if (mode === 'AUTO') setEntryPrice(current);
     };
-
     return () => ws.close();
-  }, [pair, paused]);
+  }, [pair, mode]);
 
-  // ================= AUTO ENTRY =================
+  // Logic Kalkulasi Utama
   useEffect(() => {
-    if (entryMode === "AUTO" && price > 0) {
-      setEntry(price);
-    }
-  }, [price, entryMode]);
+    const entry = mode === 'AUTO' ? livePrice : entryPrice;
+    if (!entry || entry === 0) return;
 
-  const baseEntry = entry || price || 0;
+    const riskAmt = modal * (riskPct / 100);
+    let slDist = slType === 'CONSERVATIVE' ? 0.02 : slType === 'ANTI-SWEEP' ? 0.006 : 0.01;
+    
+    const sl = side === 'LONG' ? entry * (1 - slDist) : entry * (1 + slDist);
+    const size = riskAmt / slDist;
+    const margin = size / leverage;
 
-  // ================= CORE =================
-  const riskAmount = balance * (riskPercent / 100);
+    const tp1 = side === 'LONG' ? entry * (1 + slDist) : entry * (1 - slDist);
+    const tp2 = side === 'LONG' ? entry * (1 + (slDist * rrRatio)) : entry * (1 - (slDist * rrRatio));
+    const tp3 = side === 'LONG' ? entry * (1 + (slDist * (rrRatio + 2))) : entry * (1 - (slDist * (rrRatio + 2)));
+    
+    const p1 = (riskAmt * 1) * (tpVol.tp1 / 100);
+    const p2 = (riskAmt * rrRatio) * (tpVol.tp2 / 100);
+    const p3 = (riskAmt * (rrRatio + 2)) * (tpVol.tp3 / 100);
+    const totalGross = p1 + p2 + p3;
 
-  const slPrice =
-    direction === "LONG"
-      ? baseEntry * (1 - riskPercent / 100)
-      : baseEntry * (1 + riskPercent / 100);
+    const feeRate = member === 'VIP' ? 0.0004 : 0.0005;
+    const totalFee = (size * feeRate) * 2;
+    const totalSlip = size * (slippage / 100);
+    const totalNet = totalGross - totalFee - totalSlip;
 
-  const riskDistance = Math.abs(baseEntry - slPrice) || 0.0000001;
-
-  const positionSize = riskAmount / riskDistance;
-  const notional = positionSize * baseEntry;
-
-  const grossPnL = riskAmount * rr;
-
-  const splitPnL =
-    (grossPnL * tp1Split) / 100 +
-    (grossPnL * tp2Split) / 100 +
-    (grossPnL * tp3Split) / 100;
-
-  const feeCost = notional * member.fee * 2;
-  const netPnL = splitPnL - feeCost;
-  const roi = balance ? (netPnL / balance) * 100 : 0;
-
-  const baseMove = riskDistance * rr;
-
-  const tp1 = tp1Split
-    ? direction === "LONG"
-      ? baseEntry + baseMove
-      : baseEntry - baseMove
-    : 0;
-
-  const tp2 = tp2Split
-    ? direction === "LONG"
-      ? baseEntry + baseMove * 2
-      : baseEntry - baseMove * 2
-    : 0;
-
-  const tp3 = tp3Split
-    ? direction === "LONG"
-      ? baseEntry + baseMove * 3
-      : baseEntry - baseMove * 3
-    : 0;
-
-  // ================= SAVE =================
-  async function saveTrade() {
-    if (!splitValid) return;
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) return;
-
-    await supabase.from("trade_logs").insert({
-      user_id: user.id,
-      pair,
-      direction,
-      entry: baseEntry,
-      stoploss: slPrice,
-      tp1,
-      tp2,
-      tp3,
-      risk_percent: riskPercent,
-      leverage,
-      risk_amount: riskAmount,
-      position_size: positionSize,
-      pnl: netPnL,
+    setResults({ 
+      sl, slPct: slDist * 100, tp1, tp2, tp3,
+      size, margin, riskAmt, gross: totalGross, fee: totalFee, slipAmt: totalSlip, net: totalNet, 
+      roi: (totalNet / margin) * 100, kelly: ((0.5 * (rrRatio + 1) - 0.5) / rrRatio) * 100,
+      totalPotentialLoss: riskAmt + totalFee + totalSlip
     });
+  }, [livePrice, entryPrice, modal, riskPct, leverage, rrRatio, slType, side, mode, member, slippage, tpVol]);
 
-    setToast(true);
-    setTimeout(() => setToast(false), 2000);
+  async function saveTrade() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return alert("Login required!");
+      await supabase.from("trade_logs").insert({
+        user_id: user.id, pair, direction: side, entry: entryPrice, stoploss: results.sl,
+        tp1: results.tp1, tp2: results.tp2, tp3: results.tp3, risk_percent: riskPct,
+        leverage, risk_amount: results.riskAmt, position_size: results.size, pnl: results.net,
+      });
+      setToast(true);
+      setTimeout(() => setToast(false), 3000);
+    } catch (e) { alert("Save failed"); }
   }
 
-  async function logout() {
-    await supabase.auth.signOut();
-    window.location.href = "/";
-  }
-
-  // ================= UI =================
   return (
-    <div className="min-h-screen bg-gradient-to-br from-zinc-950 via-black to-zinc-900 text-white p-6">
+    <div className="min-h-screen bg-[#050505] text-white font-sans p-2 md:p-6 overflow-x-hidden">
+      {toast && <div className="fixed top-5 right-5 z-[100] bg-green-600 px-6 py-4 rounded-2xl flex items-center gap-3 shadow-2xl animate-in slide-in-from-top-5 border border-white/20"><CheckCircle2 size={24} /> <span className="font-black text-sm uppercase">Cloud Synced!</span></div>}
 
-      <Toast show={toast} text="Trade Saved 🚀" />
-
-      {/* HEADER */}
-      <div className="flex justify-between items-center mb-8">
-        <button onClick={() => setPaused(!paused)} className="px-3 py-1 bg-blue-600 rounded">
-          {paused ? "Resume" : "Pause"}
-        </button>
-
-        <button onClick={logout} className="px-3 py-1 bg-red-600 rounded">
-          Logout
-        </button>
-      </div>
-
-      {/* PRICE */}
-      <div
-  className="
-  rounded-3xl
-  p-6
-  mb-6
-  text-center
-  bg-gradient-to-r
-  from-yellow-500
-  via-yellow-400
-  to-yellow-300
-  shadow-2xl
-"
->
-  <div className="text-black text-sm font-semibold">
-    LIVE MARKET PRICE
-  </div>
-
-  <div className="text-black text-5xl font-bold tracking-tight">
-    ${price.toFixed(4)}
-  </div>
-
-  <div className="text-black text-lg font-bold">
-    {pair || "-"}
-  </div>
-</div>
-
-      <div className="grid lg:grid-cols-3 gap-6">
-
-        {/* INPUT */}
-        <div
-  className="
-  space-y-4
-  bg-zinc-900/70
-  backdrop-blur-xl
-  border border-zinc-800
-  rounded-3xl
-  p-6
-"
->
-
-          <select
-            value={member.name}
-            onChange={(e) => {
-              const m = MEMBERS.find(x => x.name === e.target.value);
-              if (m) setMember(m);
-            }}
-            className="
-w-full
-p-3
-bg-zinc-800
-border
-border-zinc-700
-rounded-xl
-focus:outline-none
-focus:ring-2
-focus:ring-yellow-500
-"
-          >
-            {MEMBERS.map(m => (
-              <option key={m.name} value={m.name}>{m.name}</option>
-            ))}
-          </select>
-
-          <input
-            value={pairInput}
-            onChange={(e) => setPairInput(e.target.value)}
-            className="w-full p-2 bg-red-900 rounded"
-            placeholder="Cari pair..."
-          />
-
-         
-
-          {/* REST SAME UI */}
-          <div className="grid grid-cols-2 gap-2">
-            <button onClick={() => setDirection("LONG")} className={`
-p-3
-rounded-xl
-font-bold
-transition
-${
-  direction === "LONG"
-    ? "bg-green-600 shadow-lg"
-    : "bg-zinc-800"
-}
-`}>LONG</button>
-            <button onClick={() => setDirection("SHORT")} className={`
-p-3
-rounded-xl
-font-bold
-transition
-${
-  direction === "SHORT"
-    ? "bg-red-600 shadow-lg"
-    : "bg-zinc-800"
-}
-`}>SHORT</button>
+      <main className="max-w-[1800px] mx-auto space-y-6">
+        {/* HEADER AREA */}
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-4">
+          <div className="xl:col-span-3 bg-zinc-900/40 border border-zinc-800 rounded-[2rem] p-6 flex flex-col md:flex-row items-center justify-between gap-6 shadow-2xl">
+             <div className="text-center md:text-left">
+                
+                <h1 className={`text-5xl md:text-7xl font-black tabular-nums transition-all duration-300 ${priceColor}`}>
+                  ${livePrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </h1>
+             </div>
+             <div className="flex flex-wrap justify-center gap-3">
+                <select value={pair} onChange={(e) => setPair(e.target.value)} className="bg-zinc-800 border border-zinc-700 text-yellow-500 font-black rounded-2xl px-6 py-3 text-lg outline-none focus:ring-4 focus:ring-yellow-500/20">
+                  {TOP_15_PAIRS.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+                <div className="bg-blue-600/10 border border-blue-500/20 text-blue-400 px-6 py-3 rounded-2xl text-xs font-black flex items-center gap-2">
+                  <Activity size={18}/> KELLY: {results.kelly.toFixed(1)}%
+                </div>
+             </div>
           </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <input value={balance} onChange={e => setBalance(+e.target.value)} className="p-2 bg-zinc-900 rounded" />
-            <input value={riskPercent} onChange={e => setRiskPercent(+e.target.value)} className="p-2 bg-zinc-900 rounded" />
-            <input value={rr} onChange={e => setRR(+e.target.value)} className="p-2 bg-zinc-900 rounded" />
-            <input value={leverage} onChange={e => setLeverage(+e.target.value)} className="p-2 bg-zinc-900 rounded" />
+          <div className="bg-zinc-900/40 border border-zinc-800 rounded-[2rem] p-6 flex items-center justify-between">
+            <div><p className="text-[10px] font-black text-zinc-500 uppercase tracking-tighter">CALCULATOR</p><p className="text-xl font-black italic">Sikasep Ado</p></div>
+            <button onClick={() => supabase.auth.signOut()} className="bg-red-500/10 text-red-500 p-4 rounded-2xl hover:bg-red-600 hover:text-white transition-all shadow-lg"><LogOut size={24}/></button>
           </div>
-
- 
-          <input
-  value={entry}
-  onChange={(e) => {
-    setEntry(+e.target.value);
-    setEntryMode("MANUAL");
-  }}
-  className="
-w-full
-p-4
-bg-yellow-400
-text-white
-font-bold
-text-center
-text-xl
-rounded-2xl
-border
-border-yellow-500
-focus:outline-none
-focus:ring-2
-focus:ring-yellow-400
-"
-  placeholder="Entry Price"
-/>
-
-          <div className="grid grid-cols-3 gap-2">
-            <input value={tp1Split} onChange={e => setTp1Split(+e.target.value)} className="p-2 bg-zinc-900 rounded" />
-            <input value={tp2Split} onChange={e => setTp2Split(+e.target.value)} className="p-2 bg-zinc-900 rounded" />
-            <input value={tp3Split} onChange={e => setTp3Split(+e.target.value)} className="p-2 bg-zinc-900 rounded" />
-          </div>
-
-          <div className={splitValid ? "text-green-400" : "text-red-400"}>
-            Total {splitTotal}%
-          </div>
-
         </div>
 
-        {/* OUTPUT */}
-        <div
-  className="
-  lg:col-span-2
-  space-y-4
-  bg-zinc-900/60
-  backdrop-blur-xl
-  border border-zinc-800
-  rounded-3xl
-  p-6
-"
->
+        {/* CHART SECTION WITH AUTO S&R (Pivot Points) */}
+        <div className="bg-zinc-900/40 border border-zinc-800  overflow-hidden h-[400px] md:h-[500px] shadow-2xl relative">
+          <div className="absolute top-4 left-4 z-10 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 text-[10px] font-bold text-green-400 uppercase tracking-widest">
+           
+          </div>
+          <iframe 
+            src={`https://s.tradingview.com/widgetembed/?symbol=BINANCE%3A${pair}&interval=15&theme=dark&style=1&timezone=Etc%2FUTC&studies=PivotPointsStandard@tv-basicstudies`}
+            width="100%" height="100%" frameBorder="0"
+          ></iframe>
+        </div>
 
-          <TPBar label="TP1" value={tp1} percent={tp1Split} color="bg-green-500" />
-          <TPBar label="TP2" value={tp2} percent={tp2Split} color="bg-blue-500" />
-          <TPBar label="TP3" value={tp3} percent={tp3Split} color="bg-purple-500" />
+        {/* CALCULATOR SIDE-BY-SIDE */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pb-10">
+          {/* CONFIG PANEL */}
+          <div className="bg-zinc-900/80 border border-zinc-800 rounded-[2.5rem] p-6 md:p-10 space-y-6 shadow-2xl backdrop-blur-md">
+            <div className="flex items-center gap-2 text-zinc-400 font-black uppercase text-xs tracking-widest border-b border-zinc-800 pb-4"><LayoutGrid size={16}/> Configuration</div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-2 bg-black/40 p-1.5 rounded-2xl border border-zinc-800">
+                    <button onClick={() => setMode('AUTO')} className={`py-3 rounded-xl text-[10px] font-black transition-all ${mode === 'AUTO' ? 'bg-blue-600 shadow-lg text-white' : 'text-zinc-500'}`}>AUTO</button>
+                    <button onClick={() => setMode('MANUAL')} className={`py-3 rounded-xl text-[10px] font-black transition-all ${mode === 'MANUAL' ? 'bg-blue-600 shadow-lg text-white' : 'text-zinc-500'}`}>MANUAL</button>
+                </div>
+                <div className="relative">
+                    <select value={member} onChange={(e) => setMember(e.target.value)} className="w-full bg-zinc-800 p-4 rounded-2xl border border-zinc-700 font-black text-xs outline-none text-white appearance-none cursor-pointer hover:border-yellow-500">
+                        <option value="REGULAR">REGULAR (0.05% Fee)</option>
+                        <option value="VIP">VIP MEMBER (0.04% Fee)</option>
+                    </select>
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500"><UserCircle size={20}/></div>
+                </div>
+            </div>
 
-          {/* OUTPUT GRID CLEAN */}
-          <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 gap-4">
+              <button onClick={() => setSide('LONG')} className={`p-6 rounded-[2rem] font-black text-xl tracking-[0.1em] transition-all ${side === 'LONG' ? 'bg-green-600 shadow-[0_0_40px_rgba(22,163,74,0.2)] ring-2 ring-green-400 text-white' : 'bg-zinc-800 opacity-20'}`}>LONG</button>
+              <button onClick={() => setSide('SHORT')} className={`p-6 rounded-[2rem] font-black text-xl tracking-[0.1em] transition-all ${side === 'SHORT' ? 'bg-red-600 shadow-[0_0_40px_rgba(220,38,38,0.2)] ring-2 ring-red-400 text-white' : 'bg-zinc-800 opacity-20'}`}>SHORT</button>
+            </div>
 
-  <StatCard
-    title="STOP LOSS"
-    value={slPrice.toFixed(4)}
-  />
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="space-y-1"><label className="text-[10px] text-zinc-500 font-black uppercase ml-2 tracking-tighter">Capital ($)</label><input type="number" value={modal} onChange={(e) => setModal(Number(e.target.value))} className="w-full bg-zinc-800 p-4 rounded-2xl border border-zinc-700 font-bold" /></div>
+              <div className="space-y-1"><label className="text-[10px] text-zinc-500 font-black uppercase ml-2 tracking-tighter text-red-500">Risk %</label><input type="number" value={riskPct} onChange={(e) => setRiskPct(Number(e.target.value))} className="w-full bg-zinc-800 p-4 rounded-2xl border border-zinc-700 font-bold" /></div>
+              <div className="space-y-1"><label className="text-[10px] text-zinc-500 font-black uppercase ml-2 tracking-tighter text-green-500">Reward (RR)</label><input type="number" value={rrRatio} onChange={(e) => setRrRatio(Number(e.target.value))} className="w-full bg-zinc-800 p-4 rounded-2xl border border-zinc-700 font-bold" /></div>
+              <div className="space-y-1"><label className="text-[10px] text-zinc-500 font-black uppercase ml-2 tracking-tighter">Slip %</label><input type="number" value={slippage} onChange={(e) => setSlippage(Number(e.target.value))} className="w-full bg-zinc-800 p-4 rounded-2xl border border-zinc-700 font-bold text-yellow-600" /></div>
+            </div>
 
-  <StatCard
-    title="RISK"
-    value={`$${riskAmount.toFixed(2)}`}
-  />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-zinc-800 pt-6">
+              <div className="bg-black/40 p-5 rounded-[1.5rem] border border-zinc-800 space-y-3">
+                <label className="text-[10px] text-zinc-400 font-black uppercase flex items-center gap-2 tracking-widest"><PieChart size={14}/> Exit Volume % (TP1-2-3)</label>
+                <div className="grid grid-cols-3 gap-3">
+                  <input type="number" value={tpVol.tp1} onChange={(e) => setTpVol({...tpVol, tp1: Number(e.target.value)})} className="bg-zinc-900 p-3 rounded-xl text-center text-xs font-black border border-zinc-700" />
+                  <input type="number" value={tpVol.tp2} onChange={(e) => setTpVol({...tpVol, tp2: Number(e.target.value)})} className="bg-zinc-900 p-3 rounded-xl text-center text-xs font-black border border-zinc-700" />
+                  <input type="number" value={tpVol.tp3} onChange={(e) => setTpVol({...tpVol, tp3: Number(e.target.value)})} className="bg-zinc-900 p-3 rounded-xl text-center text-xs font-black border border-zinc-700" />
+                </div>
+              </div>
+              <div className="space-y-1 flex flex-col justify-center">
+                <label className="text-[10px] text-zinc-500 font-black uppercase ml-2 tracking-widest">Stop Loss Strategy</label>
+                <select value={slType} onChange={(e) => setSlType(e.target.value)} className="w-full bg-zinc-800 p-5 rounded-2xl text-yellow-500 font-black border border-zinc-700 outline-none hover:border-yellow-500 transition-all cursor-pointer">
+                  <option value="REALISTIC">REALISTIC (1.0%)</option>
+                  <option value="CONSERVATIVE">CONSERVATIVE (2.0%)</option>
+                  <option value="ANTI-SWEEP">ANTI-SWEEP PRO (0.6%)</option>
+                </select>
+              </div>
+            </div>
 
-  <StatCard
-    title="SIZE"
-    value={positionSize.toFixed(4)}
-  />
-
-  <StatCard
-    title="GROSS"
-    value={`$${grossPnL.toFixed(2)}`}
-  />
-
-  <StatCard
-    title="NET"
-    value={`$${netPnL.toFixed(2)}`}
-  />
-
-  <StatCard
-    title="ROI"
-    value={`${roi.toFixed(2)}%`}
-  />
-
-</div>
-
-          {splitValid && (
-            <button onClick={saveTrade} className="
-w-full
-p-4
-rounded-2xl
-bg-gradient-to-r
-from-green-600
-to-emerald-500
-font-bold
-text-lg
-hover:scale-[1.01]
-transition
-shadow-lg
-">
-              SAVE TRADE
+            <button onClick={saveTrade} className="w-full flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-500 p-6 rounded-[2rem] font-black transition-all shadow-xl text-lg border-b-8 border-blue-900 active:border-b-0 active:translate-y-1 group">
+              <Save size={26} className="group-hover:rotate-12 transition-transform" /> SAVE TRADE LOG
             </button>
-          )}
+          </div>
 
+          {/* OUTPUT PANEL */}
+          <div className="bg-green-600/5 border border-green-500/20 rounded-[2.5rem] p-6 md:p-10 space-y-6 shadow-2xl h-full backdrop-blur-sm">
+		  {/*<h3 className="text-2xl font-black text-green-500 flex items-center gap-3 tracking-tighter uppercase"><Zap fill="currentColor" /> Strategy Output</h3>*/}
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-zinc-900/90 p-6 rounded-3xl border-l-4 border-blue-500 border border-zinc-800">
+                <p className="text-[10px] text-blue-400 font-black uppercase tracking-widest mb-1">Position Size (USDT)</p>
+                <p className="text-4xl font-black tabular-nums tracking-tighter text-white">${results.size.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+                <p className="text-[10px] text-zinc-500 mt-2 font-bold uppercase tracking-tighter">Lev: {leverage}X / Margin: ${results.margin.toFixed(2)}</p>
+              </div>
+              <div className="bg-zinc-900/90 p-6 rounded-3xl border-l-4 border-red-500 border border-zinc-800">
+                <p className="text-[10px] text-red-500 font-black uppercase tracking-widest mb-1 flex items-center gap-2"><AlertTriangle size={14}/> Max Potential Loss</p>
+                <p className="text-4xl font-black text-red-500 tabular-nums tracking-tighter">-${results.totalPotentialLoss.toFixed(2)}</p>
+                <p className="text-[10px] text-zinc-500 mt-2 font-bold uppercase tracking-tighter italic">Fees & Slippage Included</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 font-mono">
+                {[
+                  { label: 'Stop Loss', val: results.sl, pct: results.slPct, color: 'text-red-400', sign: '-' },
+                  { label: 'TP 1 (BEP)', val: results.tp1, pct: results.slPct, color: 'text-green-500', sign: '+', vol: tpVol.tp1 },
+                  { label: 'TP 2 (Profit)', val: results.tp2, pct: results.slPct * rrRatio, color: 'text-green-400', sign: '+', vol: tpVol.tp2 },
+                  { label: 'TP 3 (Moon)', val: results.tp3, pct: results.slPct * (rrRatio + 2), color: 'text-green-300', sign: '+', vol: tpVol.tp3 }
+                ].map((item, idx) => (
+                  <div key={idx} className="flex justify-between items-center p-5 rounded-2xl border border-zinc-800 bg-black/60 shadow-inner">
+                    <span className={`${item.color} text-[10px] font-black uppercase tracking-tighter`}>{item.label} {item.vol && <span className="text-[9px] opacity-40">({item.vol}%)</span>}</span>
+                    <div className="text-right">
+                      <p className="font-black text-xl text-white tracking-tighter">${item.val.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                      <p className="text-[10px] font-bold opacity-40">{item.sign}{item.pct.toFixed(1)}%</p>
+                    </div>
+                  </div>
+                ))}
+            </div>
+
+            <div className="p-8 bg-zinc-950 rounded-[2.5rem] border border-zinc-800 shadow-2xl flex-grow flex flex-col justify-center border-t-4 border-t-zinc-800">
+               <div className="flex justify-between items-center mb-3">
+                  <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Gross Forecast</span>
+                  <span className="text-xl font-black text-green-500 tracking-tighter">+${results.gross.toFixed(2)}</span>
+               </div>
+               <div className="flex justify-between items-center pb-5 border-b border-zinc-800">
+                  <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em] text-red-500">Trading Costs (Fee+Slip)</span>
+                  <span className="text-xl font-black text-red-500 tracking-tighter">-${(results.fee + results.slipAmt).toFixed(2)}</span>
+               </div>
+               <div className="pt-6 flex flex-col md:flex-row justify-between items-center md:items-end gap-6">
+                  <div className="text-center md:text-left">
+                    <p className="text-[10px] font-black text-zinc-400 uppercase mb-1 tracking-[0.3em]">Total Net Gain</p>
+                    <p className="text-7xl font-black tracking-tighter text-white">${results.net.toFixed(2)}</p>
+                  </div>
+                  <div className="bg-gradient-to-br from-zinc-800 to-zinc-900 px-10 py-5 rounded-[2rem] border border-white/10 shadow-2xl ring-1 ring-white/5 text-center">
+                    <p className="text-[10px] font-black text-zinc-500 uppercase mb-1">ROI %</p>
+                    <span className="text-3xl font-black italic text-yellow-500 tracking-tighter">{results.roi.toFixed(2)}%</span>
+                  </div>
+               </div>
+            </div>
+          </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
