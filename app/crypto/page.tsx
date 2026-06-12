@@ -1701,7 +1701,7 @@ function resetAll(
 <div className="w-full border-t border-yellow-400 my-2" />
 <div className="p-2 flex items-center gap-3  text-zinc-400 uppercase mt-6 justify-center">
   <button
-  onClick={() => setWebPopup("http://localhost:3000/calculator")}
+  onClick={() => setWebPopup("https://calc-scalping-sikasep.vercel.app/calculator")}
   className="
     mt-3 px-3 py-1 text-2xl
     bg-green-500/20 border border-green-400

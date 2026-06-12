@@ -24,10 +24,10 @@ export default function TradingTerminalProV8() {
 
   // --- INPUT STATES ---
   const [entryPrice, setEntryPrice] = useState(0);
-  const [modal, setModal] = useState(1000);
+  const [modal, setModal] = useState(100);
   const [riskPct, setRiskPct] = useState(1);
-  const [leverage, setLeverage] = useState(20);
-  const [rrRatio, setRrRatio] = useState(2);
+  const [leverage, setLeverage] = useState(10);
+  const [rrRatio, setRrRatio] = useState(3);
   const [slType, setSlType] = useState('REALISTIC');
   const [slippage, setSlippage] = useState(0.05);
   const [tpVol, setTpVol] = useState({ tp1: 50, tp2: 30, tp3: 20 });
@@ -45,8 +45,8 @@ export default function TradingTerminalProV8() {
     ws.onmessage = (event) => {
       const ticker = JSON.parse(event.data);
       const current = parseFloat(ticker.c);
-      if (current > prevPrice.current) setPriceColor('text-green-500 font-bold');
-      else if (current < prevPrice.current) setPriceColor('text-red-500 font-bold');
+      if (current > prevPrice.current) setPriceColor('text-green-500');
+      else if (current < prevPrice.current) setPriceColor('text-red-500');
       setLivePrice(current);
       prevPrice.current = current;
       if (mode === 'AUTO') setEntryPrice(current);
@@ -70,11 +70,13 @@ export default function TradingTerminalProV8() {
     const tp2 = side === 'LONG' ? entry * (1 + (slDist * rrRatio)) : entry * (1 - (slDist * rrRatio));
     const tp3 = side === 'LONG' ? entry * (1 + (slDist * (rrRatio + 2))) : entry * (1 - (slDist * (rrRatio + 2)));
     
+    // Profit Calculation based on Partial Exit Volume
     const p1 = (riskAmt * 1) * (tpVol.tp1 / 100);
     const p2 = (riskAmt * rrRatio) * (tpVol.tp2 / 100);
     const p3 = (riskAmt * (rrRatio + 2)) * (tpVol.tp3 / 100);
     const totalGross = p1 + p2 + p3;
 
+    // Fees & Costs
     const feeRate = member === 'VIP' ? 0.0004 : 0.0005;
     const totalFee = (size * feeRate) * 2;
     const totalSlip = size * (slippage / 100);
@@ -92,11 +94,12 @@ export default function TradingTerminalProV8() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return alert("Login required!");
-      await supabase.from("trade_logs").insert({
-        user_id: user.id, pair, direction: side, entry: entryPrice, stoploss: results.sl,
+      const { error } = await supabase.from("trade_logs").insert({
+        user_id: user.id, pair, direction: side, entry: mode === 'AUTO' ? livePrice : entryPrice, stoploss: results.sl,
         tp1: results.tp1, tp2: results.tp2, tp3: results.tp3, risk_percent: riskPct,
         leverage, risk_amount: results.riskAmt, position_size: results.size, pnl: results.net,
       });
+      if (error) throw error;
       setToast(true);
       setTimeout(() => setToast(false), 3000);
     } catch (e) { alert("Save failed"); }
@@ -104,14 +107,19 @@ export default function TradingTerminalProV8() {
 
   return (
     <div className="min-h-screen bg-[#050505] text-white font-sans p-2 md:p-6 overflow-x-hidden">
-      {toast && <div className="fixed top-5 right-5 z-[100] bg-green-600 px-6 py-4 rounded-2xl flex items-center gap-3 shadow-2xl animate-in slide-in-from-top-5 border border-white/20"><CheckCircle2 size={24} /> <span className="font-black text-sm uppercase">Cloud Synced!</span></div>}
+      {/* Toast Notification */}
+      {toast && (
+        <div className="fixed top-5 right-5 z-[100] bg-green-600 px-6 py-4 rounded-2xl flex items-center gap-3 shadow-2xl animate-in slide-in-from-top-5 border border-white/20">
+          <CheckCircle2 size={24} /> <span className="font-black text-sm uppercase text-white">Cloud Synced!</span>
+        </div>
+      )}
 
       <main className="max-w-[1800px] mx-auto space-y-6">
         {/* HEADER AREA */}
         <div className="grid grid-cols-1 xl:grid-cols-4 gap-4">
           <div className="xl:col-span-3 bg-zinc-900/40 border border-zinc-800 rounded-[2rem] p-6 flex flex-col md:flex-row items-center justify-between gap-6 shadow-2xl">
              <div className="text-center md:text-left">
-                
+                <p className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.3em]">Binance Real-time Feed</p>
                 <h1 className={`text-5xl md:text-7xl font-black tabular-nums transition-all duration-300 ${priceColor}`}>
                   ${livePrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </h1>
@@ -125,17 +133,14 @@ export default function TradingTerminalProV8() {
                 </div>
              </div>
           </div>
-          <div className="bg-zinc-900/40 border border-zinc-800 rounded-[2rem] p-6 flex items-center justify-between">
-            <div><p className="text-[10px] font-black text-zinc-500 uppercase tracking-tighter">CALCULATOR</p><p className="text-xl font-black italic">Sikasep Ado</p></div>
+          <div className="bg-zinc-900/40 border border-zinc-800 rounded-[2rem] p-6 flex items-center justify-between shadow-xl">
+            <div><p className="text-[10px] font-black text-zinc-500 uppercase tracking-tighter">Terminal V8 Pro</p><p className="text-xl font-black text-white italic">Sikasep Ado</p></div>
             <button onClick={() => supabase.auth.signOut()} className="bg-red-500/10 text-red-500 p-4 rounded-2xl hover:bg-red-600 hover:text-white transition-all shadow-lg"><LogOut size={24}/></button>
           </div>
         </div>
 
-        {/* CHART SECTION WITH AUTO S&R (Pivot Points) */}
-        <div className="bg-zinc-900/40 border border-zinc-800  overflow-hidden h-[400px] md:h-[500px] shadow-2xl relative">
-          <div className="absolute top-4 left-4 z-10 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 text-[10px] font-bold text-green-400 uppercase tracking-widest">
-           
-          </div>
+        {/* CHART SECTION */}
+        <div className="bg-zinc-900/40 border border-zinc-800 rounded-[2.5rem] overflow-hidden h-[400px] md:h-[500px] shadow-2xl">
           <iframe 
             src={`https://s.tradingview.com/widgetembed/?symbol=BINANCE%3A${pair}&interval=15&theme=dark&style=1&timezone=Etc%2FUTC&studies=PivotPointsStandard@tv-basicstudies`}
             width="100%" height="100%" frameBorder="0"
@@ -144,9 +149,10 @@ export default function TradingTerminalProV8() {
 
         {/* CALCULATOR SIDE-BY-SIDE */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pb-10">
+          
           {/* CONFIG PANEL */}
           <div className="bg-zinc-900/80 border border-zinc-800 rounded-[2.5rem] p-6 md:p-10 space-y-6 shadow-2xl backdrop-blur-md">
-            <div className="flex items-center gap-2 text-zinc-400 font-black uppercase text-xs tracking-widest border-b border-zinc-800 pb-4"><LayoutGrid size={16}/> Configuration</div>
+            <div className="flex items-center gap-2 text-zinc-400 font-black uppercase text-xs tracking-widest border-b border-zinc-800 pb-4"><LayoutGrid size={16}/> Configuration Panel</div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="grid grid-cols-2 gap-2 bg-black/40 p-1.5 rounded-2xl border border-zinc-800">
@@ -167,24 +173,24 @@ export default function TradingTerminalProV8() {
               <button onClick={() => setSide('SHORT')} className={`p-6 rounded-[2rem] font-black text-xl tracking-[0.1em] transition-all ${side === 'SHORT' ? 'bg-red-600 shadow-[0_0_40px_rgba(220,38,38,0.2)] ring-2 ring-red-400 text-white' : 'bg-zinc-800 opacity-20'}`}>SHORT</button>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="space-y-1"><label className="text-[10px] text-zinc-500 font-black uppercase ml-2 tracking-tighter">Capital ($)</label><input type="number" value={modal} onChange={(e) => setModal(Number(e.target.value))} className="w-full bg-zinc-800 p-4 rounded-2xl border border-zinc-700 font-bold" /></div>
-              <div className="space-y-1"><label className="text-[10px] text-zinc-500 font-black uppercase ml-2 tracking-tighter text-red-500">Risk %</label><input type="number" value={riskPct} onChange={(e) => setRiskPct(Number(e.target.value))} className="w-full bg-zinc-800 p-4 rounded-2xl border border-zinc-700 font-bold" /></div>
-              <div className="space-y-1"><label className="text-[10px] text-zinc-500 font-black uppercase ml-2 tracking-tighter text-green-500">Reward (RR)</label><input type="number" value={rrRatio} onChange={(e) => setRrRatio(Number(e.target.value))} className="w-full bg-zinc-800 p-4 rounded-2xl border border-zinc-700 font-bold" /></div>
-              <div className="space-y-1"><label className="text-[10px] text-zinc-500 font-black uppercase ml-2 tracking-tighter">Slip %</label><input type="number" value={slippage} onChange={(e) => setSlippage(Number(e.target.value))} className="w-full bg-zinc-800 p-4 rounded-2xl border border-zinc-700 font-bold text-yellow-600" /></div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+              <div className="space-y-1"><label className="text-[10px] text-zinc-500 font-black uppercase tracking-tighter">Capital ($)</label><input type="number" value={modal} onChange={(e) => setModal(Number(e.target.value))} className="w-full bg-zinc-800 p-4 rounded-2xl border border-zinc-700 font-bold outline-none" /></div>
+              <div className="space-y-1"><label className="text-[10px] text-zinc-500 font-black uppercase tracking-tighter text-red-500">Risk %</label><input type="number" value={riskPct} onChange={(e) => setRiskPct(Number(e.target.value))} className="w-full bg-zinc-800 p-4 rounded-2xl border border-zinc-700 font-bold outline-none" /></div>
+              <div className="space-y-1"><label className="text-[10px] text-zinc-500 font-black uppercase tracking-tighter text-green-500">Reward (RR)</label><input type="number" value={rrRatio} onChange={(e) => setRrRatio(Number(e.target.value))} className="w-full bg-zinc-800 p-4 rounded-2xl border border-zinc-700 font-bold outline-none" /></div>
+              <div className="space-y-1"><label className="text-[10px] text-zinc-500 font-black uppercase tracking-tighter text-yellow-600">Slip %</label><input type="number" value={slippage} onChange={(e) => setSlippage(Number(e.target.value))} className="w-full bg-zinc-800 p-4 rounded-2xl border border-zinc-700 font-bold outline-none" /></div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-zinc-800 pt-6">
               <div className="bg-black/40 p-5 rounded-[1.5rem] border border-zinc-800 space-y-3">
-                <label className="text-[10px] text-zinc-400 font-black uppercase flex items-center gap-2 tracking-widest"><PieChart size={14}/> Exit Volume % (TP1-2-3)</label>
+                <label className="text-[10px] text-zinc-400 font-black uppercase flex items-center gap-2 tracking-widest"><PieChart size={14}/> Partial Exit % (TP1-2-3)</label>
                 <div className="grid grid-cols-3 gap-3">
-                  <input type="number" value={tpVol.tp1} onChange={(e) => setTpVol({...tpVol, tp1: Number(e.target.value)})} className="bg-zinc-900 p-3 rounded-xl text-center text-xs font-black border border-zinc-700" />
-                  <input type="number" value={tpVol.tp2} onChange={(e) => setTpVol({...tpVol, tp2: Number(e.target.value)})} className="bg-zinc-900 p-3 rounded-xl text-center text-xs font-black border border-zinc-700" />
-                  <input type="number" value={tpVol.tp3} onChange={(e) => setTpVol({...tpVol, tp3: Number(e.target.value)})} className="bg-zinc-900 p-3 rounded-xl text-center text-xs font-black border border-zinc-700" />
+                  <input type="number" value={tpVol.tp1} onChange={(e) => setTpVol({...tpVol, tp1: Number(e.target.value)})} className="bg-zinc-900 p-3 rounded-xl text-center text-xs font-black border border-zinc-700 outline-none" />
+                  <input type="number" value={tpVol.tp2} onChange={(e) => setTpVol({...tpVol, tp2: Number(e.target.value)})} className="bg-zinc-900 p-3 rounded-xl text-center text-xs font-black border border-zinc-700 outline-none" />
+                  <input type="number" value={tpVol.tp3} onChange={(e) => setTpVol({...tpVol, tp3: Number(e.target.value)})} className="bg-zinc-900 p-3 rounded-xl text-center text-xs font-black border border-zinc-700 outline-none" />
                 </div>
               </div>
               <div className="space-y-1 flex flex-col justify-center">
-                <label className="text-[10px] text-zinc-500 font-black uppercase ml-2 tracking-widest">Stop Loss Strategy</label>
+                <label className="text-[10px] text-zinc-500 font-black uppercase ml-2 tracking-widest text-center">Stop Loss Strategy</label>
                 <select value={slType} onChange={(e) => setSlType(e.target.value)} className="w-full bg-zinc-800 p-5 rounded-2xl text-yellow-500 font-black border border-zinc-700 outline-none hover:border-yellow-500 transition-all cursor-pointer">
                   <option value="REALISTIC">REALISTIC (1.0%)</option>
                   <option value="CONSERVATIVE">CONSERVATIVE (2.0%)</option>
@@ -198,31 +204,32 @@ export default function TradingTerminalProV8() {
             </button>
           </div>
 
-          {/* OUTPUT PANEL */}
-          <div className="bg-green-600/5 border border-green-500/20 rounded-[2.5rem] p-6 md:p-10 space-y-6 shadow-2xl h-full backdrop-blur-sm">
-		  {/*<h3 className="text-2xl font-black text-green-500 flex items-center gap-3 tracking-tighter uppercase"><Zap fill="currentColor" /> Strategy Output</h3>*/}
+          {/* ANALYSIS OUTPUT PANEL */}
+          <div className="bg-green-600/5 border border-green-500/20 rounded-[2.5rem] p-6 md:p-10 space-y-6 shadow-2xl h-full backdrop-blur-md overflow-hidden relative">
+            <div className="absolute top-0 right-0 p-8 opacity-5 text-green-500 pointer-events-none"><ShieldCheck size={250} /></div>
+            <h3 className="text-2xl font-black text-green-500 flex items-center gap-3 tracking-tighter uppercase"><Zap fill="currentColor" /> Live Strategy Output</h3>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-zinc-900/90 p-6 rounded-3xl border-l-4 border-blue-500 border border-zinc-800">
+              <div className="bg-zinc-900/90 p-6 rounded-3xl border-l-4 border-blue-500 border border-zinc-800 shadow-xl">
                 <p className="text-[10px] text-blue-400 font-black uppercase tracking-widest mb-1">Position Size (USDT)</p>
                 <p className="text-4xl font-black tabular-nums tracking-tighter text-white">${results.size.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
-                <p className="text-[10px] text-zinc-500 mt-2 font-bold uppercase tracking-tighter">Lev: {leverage}X / Margin: ${results.margin.toFixed(2)}</p>
+                <p className="text-[10px] text-zinc-500 mt-2 font-bold uppercase tracking-tighter">Margin: ${results.margin.toFixed(2)}</p>
               </div>
-              <div className="bg-zinc-900/90 p-6 rounded-3xl border-l-4 border-red-500 border border-zinc-800">
+              <div className="bg-zinc-900/90 p-6 rounded-3xl border-l-4 border-red-500 border border-zinc-800 shadow-xl">
                 <p className="text-[10px] text-red-500 font-black uppercase tracking-widest mb-1 flex items-center gap-2"><AlertTriangle size={14}/> Max Potential Loss</p>
                 <p className="text-4xl font-black text-red-500 tabular-nums tracking-tighter">-${results.totalPotentialLoss.toFixed(2)}</p>
-                <p className="text-[10px] text-zinc-500 mt-2 font-bold uppercase tracking-tighter italic">Fees & Slippage Included</p>
+                <p className="text-[10px] text-zinc-500 mt-2 font-bold uppercase tracking-tighter italic text-center">Fees & Slippage Included</p>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 font-mono">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 font-mono text-sm">
                 {[
                   { label: 'Stop Loss', val: results.sl, pct: results.slPct, color: 'text-red-400', sign: '-' },
                   { label: 'TP 1 (BEP)', val: results.tp1, pct: results.slPct, color: 'text-green-500', sign: '+', vol: tpVol.tp1 },
                   { label: 'TP 2 (Profit)', val: results.tp2, pct: results.slPct * rrRatio, color: 'text-green-400', sign: '+', vol: tpVol.tp2 },
-                  { label: 'TP 3 (Moon)', val: results.tp3, pct: results.slPct * (rrRatio + 2), color: 'text-green-300', sign: '+', vol: tpVol.tp3 }
+                  { label: 'TP 3 (Max)', val: results.tp3, pct: results.slPct * (rrRatio + 2), color: 'text-green-300', sign: '+', vol: tpVol.tp3 }
                 ].map((item, idx) => (
-                  <div key={idx} className="flex justify-between items-center p-5 rounded-2xl border border-zinc-800 bg-black/60 shadow-inner">
+                  <div key={idx} className={`flex justify-between items-center p-5 rounded-2xl border border-zinc-800 bg-black/60 shadow-inner ${idx === 1 ? 'border-green-500/30 bg-green-500/5' : ''}`}>
                     <span className={`${item.color} text-[10px] font-black uppercase tracking-tighter`}>{item.label} {item.vol && <span className="text-[9px] opacity-40">({item.vol}%)</span>}</span>
                     <div className="text-right">
                       <p className="font-black text-xl text-white tracking-tighter">${item.val.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
@@ -234,20 +241,20 @@ export default function TradingTerminalProV8() {
 
             <div className="p-8 bg-zinc-950 rounded-[2.5rem] border border-zinc-800 shadow-2xl flex-grow flex flex-col justify-center border-t-4 border-t-zinc-800">
                <div className="flex justify-between items-center mb-3">
-                  <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Gross Forecast</span>
+                  <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">Gross Forecast Profit</span>
                   <span className="text-xl font-black text-green-500 tracking-tighter">+${results.gross.toFixed(2)}</span>
                </div>
                <div className="flex justify-between items-center pb-5 border-b border-zinc-800">
-                  <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em] text-red-500">Trading Costs (Fee+Slip)</span>
+                  <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em] text-red-500">Total Costs (Fee+Slip)</span>
                   <span className="text-xl font-black text-red-500 tracking-tighter">-${(results.fee + results.slipAmt).toFixed(2)}</span>
                </div>
-               <div className="pt-6 flex flex-col md:flex-row justify-between items-center md:items-end gap-6">
-                  <div className="text-center md:text-left">
-                    <p className="text-[10px] font-black text-zinc-400 uppercase mb-1 tracking-[0.3em]">Total Net Gain</p>
+               <div className="pt-6 flex flex-col md:flex-row justify-between items-center md:items-end gap-6 text-center md:text-left">
+                  <div>
+                    <p className="text-[10px] font-black text-zinc-400 uppercase mb-1 tracking-[0.3em]">Estimated Net Gain</p>
                     <p className="text-7xl font-black tracking-tighter text-white">${results.net.toFixed(2)}</p>
                   </div>
-                  <div className="bg-gradient-to-br from-zinc-800 to-zinc-900 px-10 py-5 rounded-[2rem] border border-white/10 shadow-2xl ring-1 ring-white/5 text-center">
-                    <p className="text-[10px] font-black text-zinc-500 uppercase mb-1">ROI %</p>
+                  <div className="bg-gradient-to-br from-zinc-800 to-zinc-900 px-10 py-5 rounded-[2rem] border border-white/10 shadow-2xl ring-1 ring-white/5">
+                    <p className="text-[10px] font-black text-zinc-500 uppercase text-center mb-1 tracking-widest">ROI %</p>
                     <span className="text-3xl font-black italic text-yellow-500 tracking-tighter">{results.roi.toFixed(2)}%</span>
                   </div>
                </div>
