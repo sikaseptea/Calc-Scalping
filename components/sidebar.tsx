@@ -11,6 +11,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   User,
+  Wallet,
 } from "lucide-react";
 
 const menus = [
@@ -18,6 +19,7 @@ const menus = [
   { label: "Progress", href: "/progress", icon: BarChart3 },
   { label: "Compound", href: "/compound", icon: TrendingUp },
   { label: "Crypto", href: "/crypto", icon: TrendingUp },
+  { label: "Actual", href: "/actual", icon: BarChart3 },
 ];
 
 type SidebarProps = {

@@ -90,10 +90,57 @@ export default function TradingTerminalProV8() {
     });
   }, [livePrice, entryPrice, modal, riskPct, leverage, rrRatio, slType, side, mode, member, slippage, tpVol]);
 
+useEffect(() => {
+  const {
+    data: { subscription },
+  } = supabase.auth.onAuthStateChange((event, session) => {
+    console.log("AUTH EVENT:", event);
+    console.log("SESSION:", session);
+
+    if (session?.user) {
+      console.log("User logged in:", session.user.email);
+    }
+
+    if (event === "SIGNED_OUT") {
+      window.location.href = "/login";
+    }
+  });
+
+  return () => subscription.unsubscribe();
+}, []);
+
+
+async function handleLogout() {
+  try {
+    console.log("Logout clicked");
+
+    const { error } = await supabase.auth.signOut({ scope: "global" });
+
+    if (error) {
+      console.error("Logout error:", error.message);
+      alert("Logout gagal");
+      return;
+    }
+
+    // paksa redirect ke login page
+    window.location.href = "/login";
+  } catch (err) {
+    console.error("Unexpected logout error:", err);
+  }
+}
+
   async function saveTrade() {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return alert("Login required!");
+      const {
+  data: { session },
+} = await supabase.auth.getSession();
+
+const user = session?.user;
+
+if (!user) {
+  alert("Session tidak ditemukan. Login ulang.");
+  return;
+}
       const { error } = await supabase.from("trade_logs").insert({
         user_id: user.id, pair, direction: side, entry: mode === 'AUTO' ? livePrice : entryPrice, stoploss: results.sl,
         tp1: results.tp1, tp2: results.tp2, tp3: results.tp3, risk_percent: riskPct,
@@ -135,7 +182,12 @@ export default function TradingTerminalProV8() {
           </div>
           <div className="bg-zinc-900/40 border border-zinc-800 rounded-[2rem] p-6 flex items-center justify-between shadow-xl">
             <div><p className="text-[10px] font-black text-zinc-500 uppercase tracking-tighter">Terminal V8 Pro</p><p className="text-xl font-black text-white italic">Sikasep Ado</p></div>
-            <button onClick={() => supabase.auth.signOut()} className="bg-red-500/10 text-red-500 p-4 rounded-2xl hover:bg-red-600 hover:text-white transition-all shadow-lg"><LogOut size={24}/></button>
+            <button
+  onClick={handleLogout}
+  className="bg-red-500/10 text-red-500 p-4 rounded-2xl hover:bg-red-600 hover:text-white transition-all shadow-lg"
+>
+  <LogOut size={24} />
+</button>
           </div>
         </div>
 
