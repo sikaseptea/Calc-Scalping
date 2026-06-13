@@ -156,9 +156,9 @@ export default function FinancialReport() {
       {/* HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-start gap-6 print:hidden">
         <div>
-          <h1 className="text-4xl font-black bg-gradient-to-r from-green-400 via-blue-500 to-purple-600 bg-clip-text text-transparent italic uppercase tracking-tighter leading-none">Terminal Pro</h1>
+          <h1 className="text-4xl font-black bg-gradient-to-r from-green-400 via-blue-500 to-purple-600 bg-clip-text text-transparent italic uppercase tracking-tighter leading-none">Report Trading</h1>
           <p className="text-zinc-500 text-[10px] tracking-[0.4em] font-black mt-2 flex items-center gap-2 uppercase">
-            <Activity size={12} className="text-green-500 animate-pulse"/> Trading Sync Active
+            <Activity size={12} className="text-green-500 animate-pulse"/> Love By Ado
           </p>
         </div>
         <div className="flex gap-3">
