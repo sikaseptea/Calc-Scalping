@@ -1,9 +1,8 @@
-import { runETFJob } from "./orchestrator";
-import { runNewsJob } from "./jobs/newsJob";
-
 export function startScheduler() {
-  console.log("🚀 Orchestrator started...");
+  // console.log("🚀 Orchestrator is DISABLED...");
 
+  /* 
+  // Bagian ini dimatikan agar tidak ada pengambilan data otomatis
   setInterval(async () => {
     await runETFJob();
   }, 30000);
@@ -11,4 +10,5 @@ export function startScheduler() {
   setInterval(async () => {
     await runNewsJob();
   }, 45000);
+  */
 }

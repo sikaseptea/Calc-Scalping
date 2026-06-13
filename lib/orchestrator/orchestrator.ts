@@ -1,14 +1,21 @@
-import { ingestSnapshot } from "@/lib/snapshot-engine/ingest";
-import { fetchETFData } from "@/lib/providers/etf-provider";
+// 1. HAPUS baris import { fetchETFData } dari "@/lib/orchestrator/orchestrator.ts"
+
+// 2. Gunakan fungsi dummy lokal (Tanpa Database & Tanpa File Eksternal)
+const fetchETFData = async () => []; 
 
 export async function runETFJob() {
-  const data = await fetchETFData();
+  try {
+    // Memanggil fungsi dummy di atas
+    const data = await fetchETFData();
 
-  const result = await ingestSnapshot({
-    type: "ETF_FLOW",
-    payload: data,
-    source: "orchestrator",
-  });
+    const result = { 
+      status: 'skipped', 
+      info: 'Database snapshot is disabled', 
+      timestamp: new Date().toISOString() 
+    };
 
-  console.log("ETF snapshot:", result);
+    console.log("ETF snapshot status:", result);
+  } catch (error) {
+    console.error("Orchestrator Error:", error);
+  }
 }

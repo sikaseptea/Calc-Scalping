@@ -1698,8 +1698,8 @@ function resetAll(
 
 
 </div>
-<div className="w-full border-t border-yellow-400 my-2" />
-<div className="p-2 flex items-center gap-3  text-zinc-400 uppercase mt-6 justify-center">
+<div className="w-full border-t border-yellow-400 " />
+<div className="grid grid-cols-1 flex items-center gap-2  text-zinc-400 uppercase mt-2 justify-center">
   <button
   onClick={() => setWebPopup("https://calc-scalping-sikasep.vercel.app/calculator")}
   className="
@@ -1711,6 +1711,19 @@ function resetAll(
 >
   <Calculator size={18} />
   Calculator
+</button>
+
+<button
+  onClick={() => setWebPopup("https://calc-scalping-sikasep.vercel.app/actual")}
+  className="
+    mt-3 px-3 py-1 text-2xl
+    bg-Blue-500/20 border border-blue-400
+    text-blue-300 rounded-lg hover:bg-blue-500/30
+    flex items-center gap-2 text-center
+  "
+>
+  <Calculator size={18} />
+  Ledger
 </button>
 </div>
 	  {/* MARKET INFO + OHLC */}
