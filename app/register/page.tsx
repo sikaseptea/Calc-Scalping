@@ -47,7 +47,7 @@ export default function RegisterPage() {
         </div>
 
         <div className="space-y-4">
-          <input
+          {/* <input
             type="email"
             placeholder="Email Address"
             value={email}
@@ -62,17 +62,17 @@ export default function RegisterPage() {
             className="w-full bg-zinc-950/50 border border-zinc-800 p-4 rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
           />
 
-          <button
+		  <button
             onClick={handleRegister}
             disabled={loading}
             className={`w-full py-4 bg-emerald-600 hover:bg-emerald-500 rounded-2xl font-bold shadow-lg shadow-emerald-600/20 transition-all flex justify-center items-center ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             {loading ? "Processing..." : "Create Account"}
-          </button>
+          </button>*/}
         </div>
 
         <p className="text-center mt-6 text-zinc-500">
-          Sudah punya akun? <a className="text-emerald-400 hover:text-emerald-300 font-medium" href="/login">Login Sekarang</a>
+         <a className="p-4 bg-zinc-900/40 border border-zinc-800 text-emerald-400 hover:text-emerald-300 font-medium" href="/login">Login</a>
         </p>
       </motion.div>
     </main>
